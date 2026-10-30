@@ -1,0 +1,344 @@
+[
+  {
+    "id": "sentry",
+    "name": "Sentry Bram",
+    "sprite": "guard",
+    "mode": "pingpong",
+    "speed": 1.1,
+    "path": [
+      [
+        44.5,
+        30.5,
+        1800
+      ],
+      [
+        50.9,
+        31.0
+      ],
+      [
+        57.5,
+        30.5,
+        1800
+      ]
+    ],
+    "quotes": [
+      "Sometimes I feel like someone is holding me down.",
+      "Halt! Oh. It's just a cursor. Carry on.",
+      "Eight hours a day guarding a door that's a hyperlink.",
+      "I've walked this path four thousand times. The path has not changed.",
+      "Every time I stop, I feel watched. Probably because I am.",
+      "The Command Office is open. Wipe your feet."
+    ]
+  },
+  {
+    "id": "courier",
+    "name": "Pip the Courier",
+    "sprite": "runner",
+    "mode": "loop",
+    "speed": 3.6,
+    "path": [
+      [
+        61.8,
+        48.3
+      ],
+      [
+        61.0,
+        52.4
+      ],
+      [
+        58.7,
+        55.9
+      ],
+      [
+        55.3,
+        58.3
+      ],
+      [
+        51.2,
+        59.1
+      ],
+      [
+        47.1,
+        58.3
+      ],
+      [
+        43.7,
+        55.9
+      ],
+      [
+        41.4,
+        52.4
+      ],
+      [
+        40.6,
+        48.3
+      ],
+      [
+        41.4,
+        44.2
+      ],
+      [
+        43.7,
+        40.7
+      ],
+      [
+        47.1,
+        38.3
+      ],
+      [
+        51.2,
+        37.5
+      ],
+      [
+        55.3,
+        38.3
+      ],
+      [
+        58.7,
+        40.7
+      ],
+      [
+        61.0,
+        44.2
+      ]
+    ],
+    "quotes": [
+      "Can't stop, carrying a deliverable. Oh. You stopped me.",
+      "Running in circles is a valid strategy. Ask any steering committee.",
+      "Lap 812. The plaza is exactly as round as yesterday.",
+      "Who keeps freezing time? It's you. It's always you.",
+      "My KPI is laps per minute and you are hurting it.",
+      "Urgent message for the Summoning Chamber: it's a contact form, but fancier."
+    ]
+  },
+  {
+    "id": "smith",
+    "name": "Old Hollis",
+    "sprite": "smith",
+    "mode": "pingpong",
+    "speed": 0.7,
+    "path": [
+      [
+        70.5,
+        33.5,
+        4200
+      ],
+      [
+        73.2,
+        35.0,
+        3800
+      ]
+    ],
+    "quotes": [
+      "Every project in there started as a quick weekend build.",
+      "Hammering bugs. They're in the code, not the forge.",
+      "Hold my hammer. Actually, don't. You're a mouse pointer.",
+      "The forge has been lit since 2 a.m. So has Aayush.",
+      "Ship it now, polish it later. The smith's oath.",
+      "Some extensions are forged. Some are copy-pasted. I don't judge."
+    ]
+  },
+  {
+    "id": "mage",
+    "name": "Apprentice Wren",
+    "sprite": "mage",
+    "mode": "pingpong",
+    "speed": 0.9,
+    "path": [
+      [
+        25.5,
+        27.0,
+        3000
+      ],
+      [
+        29.0,
+        29.5
+      ],
+      [
+        33.0,
+        31.0,
+        2600
+      ]
+    ],
+    "quotes": [
+      "I summoned a recruiter once. Still trying to send them back.",
+      "Step into the portal. It opens a contact page, but dramatically.",
+      "Sometimes I float. Sometimes it's just the CSS.",
+      "The portal pulses every 4.5 seconds. I counted. I have time.",
+      "Mostly ninja, some apprentice. GenAI division.",
+      "I asked the oracle for Aayush's email. It said: see the Summoning Chamber."
+    ]
+  },
+  {
+    "id": "recruit",
+    "name": "Recruit Tam",
+    "sprite": "recruit",
+    "mode": "loop",
+    "speed": 2.2,
+    "path": [
+      [
+        33.0,
+        44.0
+      ],
+      [
+        32.1,
+        46.8
+      ],
+      [
+        29.5,
+        48.8
+      ],
+      [
+        26.0,
+        49.5
+      ],
+      [
+        22.5,
+        48.8
+      ],
+      [
+        19.9,
+        46.8
+      ],
+      [
+        19.0,
+        44.0
+      ],
+      [
+        19.9,
+        41.2
+      ],
+      [
+        22.5,
+        39.2
+      ],
+      [
+        26.0,
+        38.5
+      ],
+      [
+        29.5,
+        39.2
+      ],
+      [
+        32.1,
+        41.2
+      ]
+    ],
+    "quotes": [
+      "Training for skills that haven't been uploaded yet.",
+      "The yard says coming soon. So do my abs.",
+      "Coach says the awards wing opens any day now.",
+      "You hovered me and I lost my rhythm. Thanks.",
+      "I'm not slow. I'm rendering.",
+      "Practicing spreadsheet shortcuts with a wooden sword."
+    ]
+  },
+  {
+    "id": "porter",
+    "name": "Gus the Porter",
+    "sprite": "porter",
+    "mode": "pingpong",
+    "speed": 1.2,
+    "path": [
+      [
+        58.5,
+        72.0,
+        2500
+      ],
+      [
+        57.5,
+        65.0
+      ],
+      [
+        56.0,
+        59.0,
+        2000
+      ]
+    ],
+    "quotes": [
+      "This crate is full of photographs. Mostly sunsets. Very good sunsets.",
+      "Is it art if it lives in a warehouse? The sign says gallery, so yes.",
+      "Mind the crate. There's a 50mm lens in here.",
+      "Put me down? You're the one holding me in place.",
+      "Every photo gets carried in by hand. Lightroom doesn't lift.",
+      "Frame 01 through Frame whatever. I carry them all."
+    ]
+  },
+  {
+    "id": "scribe",
+    "name": "Scribe Odile",
+    "sprite": "scribe",
+    "mode": "pingpong",
+    "speed": 0.6,
+    "path": [
+      [
+        73.0,
+        57.0,
+        3500
+      ],
+      [
+        78.5,
+        62.0,
+        3000
+      ]
+    ],
+    "quotes": [
+      "The writing wing is under construction. I am the writing.",
+      "Drafting essay seventeen. Deleting essay seventeen.",
+      "Every great blog starts with: I've been meaning to write more.",
+      "Shh. The words are sleeping. That's why it's the dormitories.",
+      "If you're reading this, I've already been edited.",
+      "Footnotes coming soon. Like everything else on this side of town."
+    ]
+  },
+  {
+    "id": "cat",
+    "name": "Whiskers",
+    "sprite": "cat",
+    "mode": "wander",
+    "speed": 1.6,
+    "pause": [
+      2000,
+      5500
+    ],
+    "path": [
+      [
+        45,
+        61
+      ],
+      [
+        40,
+        63
+      ],
+      [
+        53,
+        63
+      ],
+      [
+        48,
+        34
+      ],
+      [
+        63,
+        48
+      ],
+      [
+        38,
+        47
+      ],
+      [
+        60,
+        32
+      ]
+    ],
+    "quotes": [
+      "I knocked the résumé off the table. You're welcome.",
+      "I'm not a feature. I'm the feature.",
+      "Pet me and the site loads ten percent faster. Unproven.",
+      "Your cursor smells like a mouse.",
+      "I sit wherever I like. Including your hotspots.",
+      "Meow. That's the whole quote."
+    ]
+  }
+]
