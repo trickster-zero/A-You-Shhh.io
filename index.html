@@ -2,43 +2,62 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Aayush</title>
 <meta name="description" content="Aayush: consultant, photographer, and builder. Explore the base.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<link rel="preload" as="image" href="images/Home_Map.png">
 </head>
-<body>
+<body class="map-body">
 
-<main class="map-page arrive">
+<!-- Blurred copy of the map fills the screen so the base sits in its own world -->
+<div class="map-backdrop" id="map-backdrop" aria-hidden="true"></div>
+
+<main class="map-page">
   <header class="map-title">
     <h1 class="display">Aayush</h1>
     <p class="lede">Consultant by day. I photograph, and I build tools, games, and extensions by night.</p>
   </header>
 
   <div class="map" id="map">
-    <img class="map-image" src="images/Home_Map.png" width="1536" height="1024"
-         alt="Illustrated fantasy fortress on a clifftop, seen from above at dusk. A glowing blue portal chamber and a great hall with banners stand along the north wall, a forge workshop and two lamplit cottages sit to the east, a storehouse with crates and a canvas awning to the south, a fenced training yard with archery targets to the west, and a circular plaza with a banner monument at the center."
-         decoding="async" fetchpriority="high" draggable="false">
+    <div class="map-stage" id="map-stage">
+      <img class="map-image" src="images/Home_Map.png" width="1536" height="1024"
+           alt="Illustrated fantasy fortress on a clifftop, seen from above at dusk. A glowing blue portal chamber and a great hall with banners stand along the north wall, a forge workshop and two lamplit cottages sit to the east, a storehouse with crates and a canvas awning to the south, a fenced training yard with archery targets to the west, and a circular plaza with a banner monument at the center."
+           decoding="async" fetchpriority="high" draggable="false">
 
-    <div class="map-vignette" aria-hidden="true"></div>
+      <!-- Ambient life: positions are % of the image. Decorative only. -->
+      <div class="map-ambient" aria-hidden="true">
+        <span class="ambient ambient-portal"></span>
+        <span class="ambient ambient-light" style="--x:43.2%; --y:20.3%; --d:-0.4s"></span>
+        <span class="ambient ambient-light" style="--x:58.4%; --y:20.3%; --d:-1.7s"></span>
+        <span class="ambient ambient-light" style="--x:50.9%; --y:22.2%; --d:-2.9s"></span>
+        <span class="ambient ambient-light ambient-forge" style="--x:75.5%; --y:31%; --d:-1.1s"></span>
+        <span class="mote" style="--x:27%; --y:20%; --d:0s;    --t:7s"></span>
+        <span class="mote" style="--x:31%; --y:14%; --d:-2s;   --t:9s"></span>
+        <span class="mote is-ember" style="--x:76%; --y:28%; --d:-1s; --t:6s"></span>
+        <span class="mote is-ember" style="--x:73%; --y:31%; --d:-4s; --t:8s"></span>
+        <span class="mote" style="--x:51%; --y:44%; --d:-3s;   --t:10s"></span>
+        <span class="mote is-ember" style="--x:47%; --y:70%; --d:-5s; --t:9s"></span>
+        <span class="mote" style="--x:18%; --y:48%; --d:-6s;   --t:11s"></span>
+        <span class="mote is-ember" style="--x:86%; --y:52%; --d:-2.5s; --t:8s"></span>
+      </div>
 
-    <!-- Ambient lights: positions are % of the image. Decorative only. -->
-    <div class="map-ambient" aria-hidden="true">
-      <span class="ambient ambient-portal"></span>
-      <span class="ambient ambient-light" style="--x:43.2%; --y:20.3%; --d:-0.4s"></span>
-      <span class="ambient ambient-light" style="--x:58.4%; --y:20.3%; --d:-1.7s"></span>
-      <span class="ambient ambient-light" style="--x:50.9%; --y:22.2%; --d:-2.9s"></span>
-      <span class="ambient ambient-light ambient-forge" style="--x:75.5%; --y:31%; --d:-1.1s"></span>
+      <div class="map-spotlight" id="map-spotlight" aria-hidden="true"></div>
+
+      <!-- Hotspots and their name plaques are built from data/buildings.json -->
+      <nav class="map-hotspots" id="hotspots" aria-label="Buildings"></nav>
+
+      <!-- Wandering characters, built from data/characters.json by npcs.js -->
+      <div class="map-npcs" id="npcs" aria-hidden="true"></div>
     </div>
-
-    <!-- Hotspots are built from data/buildings.json by map.js -->
-    <nav class="map-hotspots" id="hotspots" aria-label="Buildings"></nav>
 
     <div class="map-card" id="map-card" role="status" aria-live="polite"></div>
   </div>
+
+  <p class="map-hint" id="map-hint">Select a building to explore</p>
 
   <nav class="home-nav" aria-label="Site">
     <ul class="nav-links">
@@ -53,5 +72,6 @@
 <div class="warp" id="warp"></div>
 
 <script src="map.js" defer></script>
+<script src="npcs.js" defer></script>
 </body>
 </html>
