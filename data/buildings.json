@@ -5,7 +5,8 @@
     "description": "Welcome to the base. Consultant by day; photographer and builder by night. Pick a building to explore.",
     "href": null,
     "status": "hub",
-    "hotspot": { "x": 41.7, "y": 37.6, "w": 19.8, "h": 21.5 }
+    "hotspot": { "x": 41.7, "y": 37.6, "w": 19.8, "h": 21.5 },
+    "pin": { "x": 51.1, "y": 38.5 }
   },
   {
     "id": "summoning-chamber",
@@ -13,7 +14,8 @@
     "description": "Open a portal. Reach out about work, collaborations, or a conversation.",
     "href": "contact.html",
     "status": "open",
-    "hotspot": { "x": 17.3, "y": 2.5, "w": 13.7, "h": 23.0 }
+    "hotspot": { "x": 17.3, "y": 2.5, "w": 13.7, "h": 23.0 },
+    "pin": { "x": 26.4, "y": 8.5 }
   },
   {
     "id": "command-office",
@@ -21,7 +23,8 @@
     "description": "Where strategy gets made. Background, experience, and how I think.",
     "href": "about.html",
     "status": "open",
-    "hotspot": { "x": 39.7, "y": 1.5, "w": 23.0, "h": 23.5 }
+    "hotspot": { "x": 39.7, "y": 1.5, "w": 23.0, "h": 23.5 },
+    "pin": { "x": 51.1, "y": 6.5 }
   },
   {
     "id": "armory",
@@ -29,7 +32,8 @@
     "description": "Tools, games, and extensions built after hours.",
     "href": "builds.html",
     "status": "open",
-    "hotspot": { "x": 64.8, "y": 13.7, "w": 19.2, "h": 22.0 }
+    "hotspot": { "x": 64.8, "y": 13.7, "w": 19.2, "h": 22.0 },
+    "pin": { "x": 74.2, "y": 16.5 }
   },
   {
     "id": "dormitories",
@@ -37,7 +41,8 @@
     "description": "Writing, coming soon.",
     "href": null,
     "status": "locked",
-    "hotspot": { "x": 70.0, "y": 35.5, "w": 27.6, "h": 27.5 }
+    "hotspot": { "x": 70.0, "y": 35.5, "w": 27.6, "h": 27.5 },
+    "pin": { "x": 84.6, "y": 41.0 }
   },
   {
     "id": "warehouse",
@@ -45,7 +50,8 @@
     "description": "Photographs, stored and framed.",
     "href": "gallery.html",
     "status": "open",
-    "hotspot": { "x": 60.5, "y": 60.0, "w": 19.5, "h": 22.0 }
+    "hotspot": { "x": 60.5, "y": 60.0, "w": 19.5, "h": 22.0 },
+    "pin": { "x": 71.0, "y": 62.0 }
   },
   {
     "id": "training-yard",
@@ -53,6 +59,7 @@
     "description": "Skills & awards, coming soon.",
     "href": null,
     "status": "locked",
-    "hotspot": { "x": 9.8, "y": 32.2, "w": 28.0, "h": 22.5 }
+    "hotspot": { "x": 9.8, "y": 32.2, "w": 28.0, "h": 22.5 },
+    "pin": { "x": 23.4, "y": 38.0 }
   }
 ]
