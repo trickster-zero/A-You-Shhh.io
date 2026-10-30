@@ -1,0 +1,22 @@
+{
+  "scout": {
+    "id": "scout",
+    "name": "Scout",
+    "level": 1,
+    "abilities": { "str": 10, "dex": 15, "con": 12, "int": 10, "wis": 10, "cha": 10 },
+    "armor": "leather",
+    "weapon": "shortsword",
+    "proficiencies": ["leather", "shortsword"],
+    "inventory": { "healing-draught": 2 }
+  },
+  "guard": {
+    "id": "guard",
+    "name": "Guard",
+    "level": 1,
+    "abilities": { "str": 15, "dex": 10, "con": 14, "int": 10, "wis": 10, "cha": 10 },
+    "armor": "chain-shirt",
+    "weapon": "mace",
+    "proficiencies": ["chain-shirt", "mace"],
+    "inventory": { "healing-draught": 2 }
+  }
+}
