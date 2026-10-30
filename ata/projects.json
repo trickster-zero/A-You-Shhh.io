@@ -1,0 +1,8 @@
+[
+  {
+    "title": "Job Search Tracker",
+    "description": "A Python scraper that pulls roles from multiple sources into a local dashboard.",
+    "tags": ["Python", "Automation", "HTML"],
+    "link": "https://github.com/trickster-zero/job-tracker"
+  }
+]
