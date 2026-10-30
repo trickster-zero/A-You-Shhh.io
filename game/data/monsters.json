@@ -1,1 +1,11 @@
+{
+  "goblin": {
+    "id": "goblin",
+    "name": "Goblin",
+    "ac": 13,
+    "hp": 7,
+    "mods": { "str": -1, "dex": 2, "con": 0 },
+    "attack": { "name": "Scimitar", "bonus": 4, "damage": "1d6+2" }
+  }
+}
 
