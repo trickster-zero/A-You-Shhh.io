@@ -4,134 +4,323 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Aayush</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0d0d0d;
-    --surface: #161616;
-    --text: #ececec;
-    --muted: #8a8a8a;
-    --accent: #e8b04b;
-    --radius: 6px;
+    --night: #0a0e13;
+    --deep: #111820;
+    --ink: #e9e4da;
+    --muted: #868b93;
+    --wood: #c9a57a;
+    --glow: #8fd3ff;
+    --ember: #e8b04b;
+    --line: #1f2731;
+    --radius: 4px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
   body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
-    line-height: 1.6;
+    background: var(--night);
+    color: var(--ink);
+    font-family: "Inter", -apple-system, sans-serif;
+    font-weight: 300;
+    line-height: 1.7;
+    overflow-x: hidden;
   }
-  a { color: var(--accent); text-decoration: none; }
+  a { color: var(--glow); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  section { max-width: 1100px; margin: 0 auto; padding: 96px 24px; }
-  h1 { font-size: clamp(2.5rem, 6vw, 4.5rem); font-weight: 600; letter-spacing: -0.02em; }
-  h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--muted); margin-bottom: 32px; font-weight: 500; }
-  .lede { font-size: 1.25rem; color: var(--muted); max-width: 640px; margin-top: 16px; }
-  .hero { min-height: 90vh; display: flex; flex-direction: column; justify-content: center; }
-  .divider { border-top: 1px solid #222; }
 
-  /* Photo gallery */
-  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
-  .gallery img {
-    width: 100%; aspect-ratio: 4 / 5; object-fit: cover;
-    border-radius: var(--radius); cursor: zoom-in;
-    background: var(--surface); transition: opacity 0.2s;
+  .display { font-family: "Cormorant Garamond", Georgia, serif; font-weight: 400; letter-spacing: 0.01em; }
+  .label {
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.3em;
+    color: var(--muted); font-weight: 500;
   }
-  .gallery img:hover { opacity: 0.85; }
+
+  section { position: relative; max-width: 1100px; margin: 0 auto; padding: 120px 24px; }
+  .divider { height: 1px; background: linear-gradient(to right, transparent, var(--line), transparent); }
+
+  /* ---------- Hero: the threshold ---------- */
+  .hero {
+    min-height: 100vh; padding: 0; max-width: none;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 60%, #15202c 0%, var(--night) 70%);
+    overflow: hidden;
+  }
+  .scene { width: min(900px, 100%); height: auto; }
+  .hero-text { text-align: center; margin-top: -24px; padding: 0 24px; }
+  .hero-text h1 { font-size: clamp(3rem, 8vw, 6rem); line-height: 1; font-weight: 400; }
+  .hero-text .lede {
+    margin: 20px auto 0; max-width: 520px; color: var(--muted);
+    font-size: 1.05rem;
+  }
+  .hint {
+    margin-top: 40px; color: var(--glow); opacity: 0.7;
+    font-size: 0.75rem; letter-spacing: 0.3em; text-transform: uppercase;
+    animation: breathe 3s ease-in-out infinite;
+  }
+  @keyframes breathe { 0%,100% { opacity: 0.3; } 50% { opacity: 0.9; } }
+
+  .portal { cursor: pointer; }
+  .portal:focus { outline: none; }
+  .portal:focus-visible .portal-ring { stroke: var(--ember); }
+  .portal-core { animation: pulse 4s ease-in-out infinite; transform-origin: 400px 300px; }
+  @keyframes pulse { 0%,100% { opacity: 0.55; transform: scale(1); } 50% { opacity: 1; transform: scale(1.06); } }
+  .portal-ring-glow { animation: ringGlow 4s ease-in-out infinite; }
+  @keyframes ringGlow { 0%,100% { opacity: 0.4; } 50% { opacity: 0.9; } }
+  .mote { animation: float 6s ease-in-out infinite; }
+  .mote:nth-child(odd) { animation-duration: 8s; }
+  @keyframes float { 0%,100% { transform: translateY(0); opacity: 0.2; } 50% { transform: translateY(-14px); opacity: 0.9; } }
+
+  /* Warp transition */
+  .warp {
+    position: fixed; left: 50%; top: 50%; width: 10px; height: 10px;
+    margin: -5px 0 0 -5px; border-radius: 50%; z-index: 50; pointer-events: none;
+    background: radial-gradient(circle, #fff 0%, var(--glow) 25%, transparent 70%);
+    opacity: 0;
+  }
+  .warp.go { animation: warp 1.2s ease-in forwards; }
+  @keyframes warp {
+    0% { opacity: 1; transform: scale(1); }
+    100% { opacity: 1; transform: scale(400); }
+  }
+
+  /* ---------- Storyboard chapters ---------- */
+  .chapter-head { margin-bottom: 56px; display: flex; flex-direction: column; gap: 10px; }
+  .chapter-head h2 { font-size: clamp(2rem, 4.5vw, 3rem); font-weight: 400; }
+  .chapter-head p { color: var(--muted); max-width: 560px; }
+
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity 1s ease, transform 1s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+
+  /* Gallery as storyboard frames */
+  .gallery {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 20px; counter-reset: frame;
+  }
+  .gallery figure {
+    position: relative; border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--deep); padding: 10px 10px 36px; counter-increment: frame;
+    transition: border-color 0.4s, transform 0.4s;
+  }
+  .gallery figure:hover { border-color: var(--wood); transform: translateY(-3px); }
+  .gallery figure::before {
+    content: "FRAME " counter(frame, decimal-leading-zero);
+    position: absolute; bottom: 12px; left: 14px;
+    font-size: 0.65rem; letter-spacing: 0.25em; color: var(--muted);
+  }
+  .gallery figure::after {
+    content: ""; position: absolute; top: 14px; right: 14px;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--wood); opacity: 0.5;
+  }
+  .gallery img {
+    display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover;
+    border-radius: 2px; cursor: zoom-in; background: #0c1116;
+  }
 
   /* Lightbox */
   .lightbox {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.92);
-    display: none; align-items: center; justify-content: center; z-index: 10; padding: 24px;
+    position: fixed; inset: 0; background: rgba(5,7,10,0.94);
+    display: none; align-items: center; justify-content: center; z-index: 60; padding: 24px;
   }
   .lightbox.open { display: flex; }
-  .lightbox img { max-width: 100%; max-height: 90vh; border-radius: var(--radius); }
+  .lightbox img { max-width: 100%; max-height: 90vh; border-radius: 2px; }
   .lightbox button {
-    position: absolute; top: 20px; right: 24px; background: none; border: none;
-    color: var(--text); font-size: 2rem; cursor: pointer;
+    position: absolute; top: 18px; right: 24px; background: none; border: none;
+    color: var(--ink); font-size: 2rem; cursor: pointer;
   }
 
-  /* Project cards */
-  .projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  /* Builds: chapters */
+  .projects { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px; counter-reset: chap; }
   .card {
-    background: var(--surface); border: 1px solid #222; border-radius: var(--radius);
-    padding: 28px; transition: border-color 0.2s; display: flex; flex-direction: column;
+    position: relative; counter-increment: chap; padding: 36px 28px 28px;
+    border: 1px solid var(--line); border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--deep), var(--night));
+    display: flex; flex-direction: column; transition: border-color 0.4s;
   }
-  .card:hover { border-color: var(--accent); }
-  .card h3 { font-size: 1.15rem; font-weight: 600; margin-bottom: 8px; }
+  .card:hover { border-color: var(--wood); }
+  .card::before {
+    content: "CHAPTER " counter(chap, upper-roman);
+    font-size: 0.65rem; letter-spacing: 0.25em; color: var(--ember); margin-bottom: 14px;
+  }
+  .card h3 { font-family: "Cormorant Garamond", Georgia, serif; font-size: 1.6rem; font-weight: 400; margin-bottom: 10px; }
   .card p { color: var(--muted); font-size: 0.95rem; flex-grow: 1; }
-  .tags { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .tags { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 6px; }
   .tags span {
-    font-size: 0.75rem; color: var(--muted); border: 1px solid #2a2a2a;
-    padding: 3px 9px; border-radius: 999px;
+    font-size: 0.7rem; letter-spacing: 0.08em; color: var(--muted);
+    border: 1px solid var(--line); padding: 3px 10px; border-radius: 999px;
   }
-  .card .links { margin-top: 16px; font-size: 0.9rem; }
+  .card .links { margin-top: 18px; font-size: 0.9rem; }
 
-  /* Contact */
-  .contact-links a { display: inline-block; margin-right: 24px; font-size: 1.05rem; }
+  /* Epilogue / contact */
+  .epilogue { text-align: center; }
+  .epilogue p.lede { color: var(--muted); margin: 16px auto 0; max-width: 520px; font-size: 1.05rem; }
+  .contact-links { margin-top: 40px; display: flex; justify-content: center; gap: 36px; flex-wrap: wrap; }
+  .contact-links a { font-size: 0.95rem; letter-spacing: 0.05em; }
 
-  footer { text-align: center; color: #555; font-size: 0.85rem; padding: 48px 24px; border-top: 1px solid #222; }
+  footer {
+    text-align: center; color: #4a5059; padding: 64px 24px 48px;
+    font-family: "Cormorant Garamond", Georgia, serif; font-style: italic; font-size: 1.1rem;
+  }
 
   @media (max-width: 600px) {
-    section { padding: 64px 20px; }
+    section { padding: 88px 20px; }
+    .gallery { grid-template-columns: 1fr 1fr; gap: 12px; }
+    .gallery figure { padding: 6px 6px 32px; }
   }
 </style>
 </head>
 <body>
 
-<section class="hero">
-  <h1>Aayush</h1>
-  <p class="lede">Consultant by day. I photograph, and I build tools, games, and extensions by night.</p>
-</section>
+<!-- Chapter 0: The threshold -->
+<section class="hero" id="top">
+  <svg class="scene" viewBox="0 0 800 500" xmlns="http://www.w3.org/2000/svg" aria-hidden="false">
+    <defs>
+      <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#16202b"/>
+        <stop offset="1" stop-color="#0d131a"/>
+      </linearGradient>
+      <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#1b1f24"/>
+        <stop offset="1" stop-color="#0c0f13"/>
+      </linearGradient>
+      <linearGradient id="wood" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#7d5f40"/>
+        <stop offset="0.5" stop-color="#a5835c"/>
+        <stop offset="1" stop-color="#7d5f40"/>
+      </linearGradient>
+      <radialGradient id="portalFill" cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stop-color="#ffffff" stop-opacity="0.95"/>
+        <stop offset="0.35" stop-color="#8fd3ff" stop-opacity="0.85"/>
+        <stop offset="0.8" stop-color="#2a5a7a" stop-opacity="0.5"/>
+        <stop offset="1" stop-color="#0a0e13" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#e8b04b"/>
+        <stop offset="0.5" stop-color="#8fd3ff"/>
+        <stop offset="1" stop-color="#e8b04b"/>
+      </linearGradient>
+      <radialGradient id="moon" cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stop-color="#e9e4da" stop-opacity="0.35"/>
+        <stop offset="1" stop-color="#e9e4da" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
 
-<div class="divider"></div>
+    <!-- Walls and floor -->
+    <rect x="0" y="0" width="800" height="330" fill="url(#wall)"/>
+    <rect x="0" y="330" width="800" height="170" fill="url(#floor)"/>
+    <line x1="0" y1="330" x2="800" y2="330" stroke="#243040" stroke-width="1"/>
 
-<section id="photography">
-  <h2>Photography</h2>
-  <div class="gallery">
-    <img src="images/DSCF0613.jpeg" alt="Photograph">
-    <img src="images/DSCF1658.jpg" alt="Photograph">
-    <img src="images/DSCF1691.jpg" alt="Photograph">
-    <img src="images/DSCF1980.jpg" alt="Photograph">
-    <img src="images/DSCF2097.jpg" alt="Photograph">
-    <img src="images/DSCF2288.jpg" alt="Photograph">
-    <img src="images/DSCF2502.jpg" alt="Photograph">
-    <img src="images/DSCF2524.jpg" alt="Photograph">
-    <img src="images/DSCF2576.jpeg" alt="Photograph">
-    <img src="images/DSCF2585.jpg" alt="Photograph">
-    <img src="images/DSCF2774.jpg" alt="Photograph">
-    <img src="images/DSCF2779.jpg" alt="Photograph">
-    <img src="images/DSCF2787.jpg" alt="Photograph">
-    <img src="images/DSCF2886.jpg" alt="Photograph">
-    <img src="images/DSCF3000.jpg" alt="Photograph">
-    <img src="images/F55560C9-E607-4548-9E04-31DE0BA24498.jpg" alt="Photograph">
-    <img src="images/IMG_0875.JPG" alt="Photograph">
-    <img src="images/IMG_1047.JPG" alt="Photograph">
-    <img src="images/IMG_1070.JPG" alt="Photograph">
-    <img src="images/IMG_3750.jpeg" alt="Photograph">
-    <img src="images/IMG_3913.jpeg" alt="Photograph">
-    <img src="images/IMG_3952.jpeg" alt="Photograph">
-    <img src="images/IMG_4308.jpeg" alt="Photograph">
-    <img src="images/IMG_4518.jpeg" alt="Photograph">
-    <img src="images/IMG_5143.JPG" alt="Photograph">
-    <img src="images/IMG_5211.JPG" alt="Photograph">
-    <img src="images/IMG_5241.JPG" alt="Photograph">
-    <img src="images/IMG_5779.JPG" alt="Photograph">
-    <img src="images/IMG_6597.JPG" alt="Photograph">
-    <img src="images/IMG_6963.JPG" alt="Photograph">
-    <img src="images/IMG_7340.JPG" alt="Photograph">
-    <img src="images/IMG_7486.JPG" alt="Photograph">
-    <img src="images/IMG_7498.jpg" alt="Photograph">
-    <img src="images/IMG_8563.JPG" alt="Photograph">
-    <img src="images/IMG_8596.JPG" alt="Photograph">
+    <!-- Window with moonlight -->
+    <rect x="520" y="70" width="170" height="180" fill="#0a1018" stroke="#2c3846" stroke-width="2"/>
+    <line x1="605" y1="70" x2="605" y2="250" stroke="#2c3846" stroke-width="2"/>
+    <line x1="520" y1="160" x2="690" y2="160" stroke="#2c3846" stroke-width="2"/>
+    <circle cx="640" cy="110" r="60" fill="url(#moon)"/>
+    <circle cx="640" cy="110" r="14" fill="#e9e4da" opacity="0.7"/>
+    <polygon points="520,250 690,250 760,330 450,330" fill="#e9e4da" opacity="0.04"/>
+
+    <!-- Wall shelf with small objects -->
+    <line x1="80" y1="150" x2="260" y2="150" stroke="#c9a57a" stroke-width="5" stroke-linecap="round" opacity="0.7"/>
+    <rect x="100" y="112" width="18" height="38" fill="#c9a57a" opacity="0.35"/>
+    <rect x="128" y="124" width="26" height="26" fill="#868b93" opacity="0.3"/>
+    <circle cx="200" cy="130" r="12" fill="#c9a57a" opacity="0.3"/>
+
+    <!-- Plant pot -->
+    <path d="M90,330 L108,290 L152,290 L170,330 Z" fill="#1d2630"/>
+    <path d="M120,290 Q100,250 88,236 M120,290 Q118,248 124,226 M120,290 Q140,252 156,240" stroke="#3d5a48" stroke-width="3" fill="none" stroke-linecap="round"/>
+
+    <!-- Rug -->
+    <ellipse cx="400" cy="400" rx="260" ry="50" fill="#141b24" stroke="#1f2a36" stroke-width="1"/>
+
+    <!-- Table -->
+    <ellipse cx="400" cy="300" rx="170" ry="38" fill="url(#wood)"/>
+    <ellipse cx="400" cy="300" rx="170" ry="38" fill="none" stroke="#5c4530" stroke-width="1"/>
+    <rect x="392" y="338" width="16" height="92" fill="#6b4f35"/>
+    <ellipse cx="400" cy="432" rx="60" ry="8" fill="#5c4530"/>
+
+    <!-- Portal -->
+    <g class="portal" role="button" tabindex="0" aria-label="Enter the gallery" onclick="enterGallery()" onkeydown="if(event.key==='Enter'){enterGallery()}">
+      <ellipse class="portal-ring-glow" cx="400" cy="296" rx="78" ry="22" fill="none" stroke="#8fd3ff" stroke-width="10" opacity="0.4" filter="blur(4px)"/>
+      <ellipse class="portal-core" cx="400" cy="296" rx="62" ry="17" fill="url(#portalFill)"/>
+      <ellipse class="portal-ring" cx="400" cy="296" rx="66" ry="18" fill="none" stroke="url(#ringGrad)" stroke-width="2"/>
+      <ellipse cx="400" cy="296" rx="66" ry="18" fill="none" stroke="#e8b04b" stroke-width="0.5" opacity="0.6" transform="rotate(-6 400 296)"/>
+    </g>
+
+    <!-- Motes of light rising from the portal -->
+    <circle class="mote" cx="370" cy="250" r="2" fill="#8fd3ff"/>
+    <circle class="mote" cx="415" cy="232" r="1.5" fill="#e8b04b"/>
+    <circle class="mote" cx="440" cy="262" r="2" fill="#8fd3ff"/>
+    <circle class="mote" cx="385" cy="222" r="1.2" fill="#e9e4da"/>
+    <circle class="mote" cx="455" cy="240" r="1.5" fill="#e8b04b"/>
+  </svg>
+
+  <div class="hero-text">
+    <p class="label">Chapter 0 · The Threshold</p>
+    <h1 class="display" style="margin-top:14px">Aayush</h1>
+    <p class="lede">Consultant by day. I photograph, and I build tools, games, and extensions by night.</p>
+    <p class="hint">Step through the portal</p>
   </div>
 </section>
 
 <div class="divider"></div>
 
+<!-- Chapter I: Gallery -->
+<section id="gallery">
+  <div class="chapter-head reveal">
+    <p class="label">Chapter I</p>
+    <h2 class="display">The Gallery</h2>
+    <p>Frames pulled from the places I've been and the things I've noticed.</p>
+  </div>
+  <div class="gallery reveal">
+    <figure><img src="images/DSCF0613.jpeg" alt="Photograph"></figure>
+    <figure><img src="images/DSCF1658.jpg" alt="Photograph"></figure>
+    <figure><img src="images/DSCF1691.jpg" alt="Photograph"></figure>
+    <figure><img src="images/DSCF1980.jpg" alt="Photograph"></figure>
+    <figure><img src="images/DSCF2097.jpg" alt="Photograph"></figure>
+    <figure><img src="images/DSCF2288.jpg" alt="Photograph"></figure>
+    <figure><img src="images/DSCF2502.jpg" alt="Photograph"></figure>
+    <figure><img src="images/DSCF2524.jpg" alt="Photograph"></figure>
+    <figure><img src="images/DSCF2576.jpeg" alt="Photograph"></figure>
+    <figure><img src="images/DSCF2585.jpg" alt="Photograph"></figure>
+    <figure><img src="images/DSCF2774.jpg" alt="Photograph"></figure>
+    <figure><img src="images/DSCF2779.jpg" alt="Photograph"></figure>
+    <figure><img src="images/DSCF2787.jpg" alt="Photograph"></figure>
+    <figure><img src="images/DSCF2886.jpg" alt="Photograph"></figure>
+    <figure><img src="images/DSCF3000.jpg" alt="Photograph"></figure>
+    <figure><img src="images/F55560C9-E607-4548-9E04-31DE0BA24498.jpg" alt="Photograph"></figure>
+    <figure><img src="images/IMG_0875.JPG" alt="Photograph"></figure>
+    <figure><img src="images/IMG_1047.JPG" alt="Photograph"></figure>
+    <figure><img src="images/IMG_1070.JPG" alt="Photograph"></figure>
+    <figure><img src="images/IMG_3750.jpeg" alt="Photograph"></figure>
+    <figure><img src="images/IMG_3913.jpeg" alt="Photograph"></figure>
+    <figure><img src="images/IMG_3952.jpeg" alt="Photograph"></figure>
+    <figure><img src="images/IMG_4308.jpeg" alt="Photograph"></figure>
+    <figure><img src="images/IMG_4518.jpeg" alt="Photograph"></figure>
+    <figure><img src="images/IMG_5143.JPG" alt="Photograph"></figure>
+    <figure><img src="images/IMG_5211.JPG" alt="Photograph"></figure>
+    <figure><img src="images/IMG_5241.JPG" alt="Photograph"></figure>
+    <figure><img src="images/IMG_5779.JPG" alt="Photograph"></figure>
+    <figure><img src="images/IMG_6597.JPG" alt="Photograph"></figure>
+    <figure><img src="images/IMG_6963.JPG" alt="Photograph"></figure>
+    <figure><img src="images/IMG_7340.JPG" alt="Photograph"></figure>
+    <figure><img src="images/IMG_7486.JPG" alt="Photograph"></figure>
+    <figure><img src="images/IMG_7498.jpg" alt="Photograph"></figure>
+    <figure><img src="images/IMG_8563.JPG" alt="Photograph"></figure>
+    <figure><img src="images/IMG_8596.JPG" alt="Photograph"></figure>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- Chapter II: Builds -->
 <section id="builds">
-  <h2>Builds</h2>
-  <div class="projects">
-    <!-- Copy a .card block for each project -->
+  <div class="chapter-head reveal">
+    <p class="label">Chapter II</p>
+    <h2 class="display">The Builds</h2>
+    <p>Tools, games, and extensions I made because something needed to exist.</p>
+  </div>
+  <div class="projects reveal">
     <div class="card">
       <h3>Job Search Tracker</h3>
       <p>A Python scraper that pulls roles from multiple sources into a local dashboard.</p>
@@ -155,17 +344,23 @@
 
 <div class="divider"></div>
 
-<section id="contact">
-  <h2>Contact</h2>
-  <p class="lede" style="margin-top:0">Open to conversations about strategy, AI, and interesting builds.</p>
-  <div class="contact-links" style="margin-top:32px">
-    <a href="mailto:you@email.com">Email</a>
-    <a href="https://linkedin.com/in/yourprofile">LinkedIn</a>
-    <a href="https://github.com/trickster-zero">GitHub</a>
+<!-- Epilogue -->
+<section id="contact" class="epilogue">
+  <div class="reveal">
+    <p class="label">Epilogue</p>
+    <h2 class="display" style="font-size:clamp(2rem,4.5vw,3rem);margin-top:14px">Let's make something</h2>
+    <p class="lede">Open to conversations about strategy, AI, and interesting builds.</p>
+    <div class="contact-links">
+      <a href="mailto:you@email.com">Email</a>
+      <a href="https://linkedin.com/in/yourprofile">LinkedIn</a>
+      <a href="https://github.com/trickster-zero">GitHub</a>
+    </div>
   </div>
 </section>
 
-<footer>© Aayush</footer>
+<footer>— fin —</footer>
+
+<div class="warp" id="warp"></div>
 
 <div class="lightbox" id="lightbox">
   <button onclick="closeLightbox()" aria-label="Close">×</button>
@@ -173,9 +368,27 @@
 </div>
 
 <script>
+  // Portal: flash, then travel to the gallery
+  function enterGallery() {
+    const warp = document.getElementById('warp');
+    warp.classList.remove('go');
+    void warp.offsetWidth;
+    warp.classList.add('go');
+    setTimeout(() => {
+      document.getElementById('gallery').scrollIntoView({ behavior: 'auto' });
+      setTimeout(() => warp.classList.remove('go'), 300);
+    }, 1000);
+  }
+
+  // Reveal sections as they scroll into view
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); observer.unobserve(e.target); } });
+  }, { threshold: 0.15 });
+  document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+  // Lightbox
   const lightbox = document.getElementById('lightbox');
   const lightboxImg = document.getElementById('lightbox-img');
-
   document.querySelectorAll('.gallery img').forEach(img => {
     img.addEventListener('click', () => {
       lightboxImg.src = img.src;
@@ -183,7 +396,6 @@
       lightbox.classList.add('open');
     });
   });
-
   function closeLightbox() { lightbox.classList.remove('open'); }
   lightbox.addEventListener('click', e => { if (e.target === lightbox) closeLightbox(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
