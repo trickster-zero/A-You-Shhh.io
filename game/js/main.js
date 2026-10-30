@@ -1,14 +1,16 @@
-// Boots the test panel. Reads ?seed= and ?test from the URL.
-// The engine modules have no DOM code; everything page-related lives here.
+// Entry point. Without ?test: the game (start screen -> encounter).
+// With ?test: the engine test panel. Engine modules contain no DOM code.
 import { createRng } from './rng.js';
 import * as dice from './dice.js';
 import * as rules from './rules.js';
 import { createCharacter, createMonster } from './entity.js';
 import { createEncounter, runEncounter, POLICIES } from './combat.js';
 import { runBatch, runAcceptanceTests } from './tests.js';
+import { mountGame } from './ui.js';
 
 const params = new URLSearchParams(location.search);
-const seed = params.get('seed') ?? String(Math.floor(Math.random() * 1e9));
+const seedParam = params.get('seed');
+const seed = seedParam ?? String(Math.floor(Math.random() * 1e9));
 const app = document.getElementById('app');
 
 boot().catch(err => {
@@ -19,7 +21,7 @@ boot().catch(err => {
 async function boot() {
   const data = await loadData();
 
-  // Console access for manual testing, e.g.:
+  // Console access, e.g.:
   //   RPG.fight('scout', 'goblin', 'abc').log
   //   const e = RPG.encounter('guard', 'goblin', 7); e.act('hard'); e.act('heal'); e.log
   window.RPG = {
@@ -38,11 +40,13 @@ async function boot() {
     })
   };
 
-  if (!params.has('test')) {
-    app.append(el('p', 'muted', 'Combat engine loaded. Add ?test to the URL to open the test panel, or use window.RPG in the console.'));
-    return;
+  if (params.has('test')) {
+    document.body.classList.add('is-test');
+    app.classList.add('panel');
+    renderPanel(data);
+  } else {
+    mountGame(app, data, { seed: seedParam });
   }
-  renderPanel(data);
 }
 
 async function loadData() {
@@ -55,6 +59,7 @@ async function loadData() {
   return { characters, items, monsters };
 }
 
+/* ======================= Test panel (?test) ======================= */
 function renderPanel(data) {
   const charSel = select('Character', Object.values(data.characters).map(c => [c.id, c.name]));
   const monSel = select('Monster', Object.values(data.monsters).map(m => [m.id, m.name]));
@@ -70,16 +75,16 @@ function renderPanel(data) {
   seedLine.append('Seed: ', el('code', '', seed), `. Reproduce with ?test&seed=${encodeURIComponent(seed)}`);
 
   app.append(
-    el('h1', '', 'Combat engine test panel'), seedLine,
+    el('h1', 'display', 'Combat engine test panel'), seedLine,
     el('div', 'controls', [charSel.wrap, monSel.wrap, polSel.wrap, runBtn, testBtn]),
-    el('h2', '', 'Batch results'), stats,
-    el('h2', '', 'Acceptance tests'), tests,
-    el('h2', '', 'Sample fight (fight #0)'), logOut
+    el('h2', 'panel-h2', 'Batch results'), stats,
+    el('h2', 'panel-h2', 'Acceptance tests'), tests,
+    el('h2', 'panel-h2', 'Sample fight (fight #0)'), logOut
   );
 
   runBtn.addEventListener('click', () => {
     runBtn.disabled = true;
-    setTimeout(() => {   // let the disabled state paint first
+    setTimeout(() => {
       const r = runBatch(data, {
         characterId: charSel.input.value, monsterId: monSel.input.value,
         policy: polSel.input.value, n: 1000, seed
@@ -107,7 +112,6 @@ function renderTests(container, results) {
   container.replaceChildren(...rows);
 }
 
-/* small DOM helpers */
 function el(tag, className, children) {
   const n = document.createElement(tag);
   if (className) n.className = className;
