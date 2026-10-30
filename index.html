@@ -11,7 +11,6 @@
 </head>
 <body>
 
-<!-- Chapter 0: The threshold -->
 <section class="hero" id="top">
   <svg class="scene" viewBox="0 0 800 500" xmlns="http://www.w3.org/2000/svg">
     <defs>
@@ -91,56 +90,18 @@
     <p class="lede">Consultant by day. I photograph, and I build tools, games, and extensions by night.</p>
     <p class="hint">Step through the portal</p>
   </div>
+
+  <nav class="home-nav">
+    <ul class="nav-links">
+      <li><a href="gallery.html">Gallery</a></li>
+      <li><a href="builds.html">Builds</a></li>
+      <li><a href="about.html">About</a></li>
+      <li><a href="contact.html">Contact</a></li>
+    </ul>
+  </nav>
 </section>
-
-<div class="divider"></div>
-
-<!-- Chapter I: Gallery (filled by script.js from data/photos.json) -->
-<section id="gallery">
-  <div class="chapter-head reveal">
-    <p class="label">Chapter I</p>
-    <h2 class="display">The Gallery</h2>
-    <p>Frames pulled from the places I've been and the things I've noticed.</p>
-  </div>
-  <div class="gallery reveal" id="gallery-grid"></div>
-</section>
-
-<div class="divider"></div>
-
-<!-- Chapter II: Builds (filled by script.js from data/projects.json) -->
-<section id="builds">
-  <div class="chapter-head reveal">
-    <p class="label">Chapter II</p>
-    <h2 class="display">The Builds</h2>
-    <p>Tools, games, and extensions I made because something needed to exist.</p>
-  </div>
-  <div class="projects reveal" id="projects-grid"></div>
-</section>
-
-<div class="divider"></div>
-
-<!-- Epilogue -->
-<section id="contact" class="epilogue">
-  <div class="reveal">
-    <p class="label">Epilogue</p>
-    <h2 class="display epilogue-title">Let's make something</h2>
-    <p class="lede">Open to conversations about strategy, AI, and interesting builds.</p>
-    <div class="contact-links">
-      <a href="mailto:you@email.com">Email</a>
-      <a href="https://linkedin.com/in/yourprofile">LinkedIn</a>
-      <a href="https://github.com/trickster-zero">GitHub</a>
-    </div>
-  </div>
-</section>
-
-<footer>— fin —</footer>
 
 <div class="warp" id="warp"></div>
-
-<div class="lightbox" id="lightbox">
-  <button id="lightbox-close" aria-label="Close">×</button>
-  <img id="lightbox-img" src="" alt="">
-</div>
 
 <script src="script.js"></script>
 </body>
