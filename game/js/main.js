@@ -7,6 +7,8 @@ import { createCharacter, createMonster } from './entity.js';
 import { createEncounter, runEncounter, POLICIES } from './combat.js';
 import { runBatch, runAcceptanceTests } from './tests.js';
 import { mountGame } from './ui.js';
+import { generateFloor } from './floor.js';
+import { createRun } from './run.js';
 
 const params = new URLSearchParams(location.search);
 const seedParam = params.get('seed');
@@ -24,10 +26,14 @@ async function boot() {
   // Console access, e.g.:
   //   RPG.fight('scout', 'goblin', 'abc').log
   //   const e = RPG.encounter('guard', 'goblin', 7); e.act('hard'); e.act('heal'); e.log
+  //   RPG.floor('abc')            -> the generated floor 1 for seed "abc"
+  //   const r = RPG.run('scout'); r.moves(); r.moveTo('n1'); r.log
   window.RPG = {
     data, seed, dice, rules, createRng, createCharacter, createMonster, createEncounter, runEncounter,
     runBatch: opts => runBatch(data, { seed, ...opts }),
     runTests: () => runAcceptanceTests(data, { seed }),
+    floor: (s = seed, n = 1) => generateFloor(s, n, data.floors),
+    run: (c = 'scout', s = seed) => createRun(data, { characterId: c, runSeed: s }),
     encounter: (c, m, s = seed) => createEncounter(
       createCharacter(data.characters[c], data.items),
       createMonster(data.monsters[m]),
@@ -55,8 +61,8 @@ async function loadData() {
     if (!res.ok) throw new Error(`data/${name}.json returned HTTP ${res.status}`);
     return res.json();
   };
-  const [characters, items, monsters] = await Promise.all(['characters', 'items', 'monsters'].map(load));
-  return { characters, items, monsters };
+  const [characters, items, monsters, floors] = await Promise.all(['characters', 'items', 'monsters', 'floors'].map(load));
+  return { characters, items, monsters, floors };
 }
 
 /* ======================= Test panel (?test) ======================= */
@@ -107,7 +113,7 @@ function renderPanel(data) {
 
 function renderTests(container, results) {
   const rows = results.map(r => testRow(r.pass, r.name, r.details));
-  rows.push(testRow(true, '6. Test panel with "Run 1000 fights"',
+  rows.push(testRow(true, '9. Test panel with "Run 1000 fights"',
     'This panel. Press the button to print win rate, average rounds, average HP left, and the full log of fight #0.'));
   container.replaceChildren(...rows);
 }
