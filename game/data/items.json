@@ -1,13 +1,18 @@
 {
   "armor": {
-    "leather":     { "id": "leather",     "name": "Leather armor", "base": 11, "dexCap": null },
-    "chain-shirt": { "id": "chain-shirt", "name": "Chain shirt",   "base": 13, "dexCap": 2 }
+    "leather":         { "id": "leather",         "name": "Leather armor",   "base": 11, "dexCap": null },
+    "chain-shirt":     { "id": "chain-shirt",     "name": "Chain shirt",     "base": 13, "dexCap": 2 },
+    "studded-leather": { "id": "studded-leather", "name": "Studded leather", "base": 12, "dexCap": null, "tier": 1, "upgrades": "leather" },
+    "breastplate":     { "id": "breastplate",     "name": "Breastplate",     "base": 14, "dexCap": 2,    "tier": 1, "upgrades": "chain-shirt" }
   },
   "weapons": {
     "shortsword": { "id": "shortsword", "name": "Shortsword", "damage": "1d6", "finesse": true,  "ability": "dex" },
-    "mace":       { "id": "mace",       "name": "Mace",       "damage": "1d6", "finesse": false, "ability": "str" }
+    "mace":       { "id": "mace",       "name": "Mace",       "damage": "1d6", "finesse": false, "ability": "str" },
+    "rapier":     { "id": "rapier",     "name": "Rapier",     "damage": "1d8", "finesse": true,  "ability": "dex", "tier": 1, "upgrades": "shortsword" },
+    "warhammer":  { "id": "warhammer",  "name": "Warhammer",  "damage": "1d8", "finesse": false, "ability": "str", "tier": 1, "upgrades": "mace" }
   },
   "consumables": {
-    "healing-draught": { "id": "healing-draught", "name": "Healing draught", "heal": 5 }
+    "healing-draught": { "id": "healing-draught", "name": "Healing draught", "heal": 5 },
+    "save-token":      { "id": "save-token",      "name": "Save token", "description": "Holds your progress. Not usable yet." }
   }
 }
