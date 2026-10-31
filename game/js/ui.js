@@ -1,10 +1,13 @@
-// Encounter UI: start screen, encounter screen, outcome screen.
-// All game rules live in the engine; this file only displays state and forwards actions.
+// Game UI: start screen -> floor map -> encounters -> chest -> floor end.
+// All rules live in the engine (combat.js) and run state (run.js); this file only displays and forwards input.
 import { createCharacter, createMonster } from './entity.js';
-import { createEncounter } from './combat.js';
+import { createRun } from './run.js';
+import { createMapView } from './mapview.js';
+import { getFloorDef } from './floor.js';
 
-const STEP_MS = 420;        // delay between revealed steps of a round
-const OUTCOME_DELAY = 600;  // pause before the outcome screen
+const STEP_MS = 420;        // delay between revealed steps of a combat round
+const OUTCOME_DELAY = 600;  // pause before the outcome dialog
+const ARRIVE_MS = 520;      // marker travel time before a fight starts
 
 const ACTIONS = [
   { key: '1', action: 'light', label: 'Light', hint: 'Normal attack' },
@@ -20,32 +23,32 @@ const BLURBS = {
 };
 
 const OUTCOME_COPY = {
-  win:    { title: 'Victory',   text: m => `The ${m} lies still. The way ahead is clear.`, primary: 'continue', secondary: 'again' },
-  defeat: { title: 'Defeated',  text: m => `The ${m} stands over you. The dark keeps this one.`, primary: 'retry', secondary: 'change' },
-  fled:   { title: 'Escaped',   text: m => `You slip back into the dark. The ${m} lets you go, this time.`, primary: 'continue', secondary: 'again' },
-  draw:   { title: 'Stalemate', text: m => `Fifty rounds, and neither you nor the ${m} gives ground.`, primary: 'retry', secondary: 'change' }
+  win:    { title: 'Victory',   text: m => `The ${m} lies still.` },
+  defeat: { title: 'Defeated',  text: m => `The ${m} stands over you. The dark keeps this one.` },
+  fled:   { title: 'Escaped',   text: () => 'You fall back the way you came.' },
+  draw:   { title: 'Stalemate', text: m => `Fifty rounds, and the ${m} gives no ground. You fall back.` }
 };
 
-const BUTTON_TEXT = { continue: 'Continue', retry: 'Retry', again: 'Fight again', change: 'Change fighter' };
+const ARROWS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
 
 export function mountGame(root, data, { seed = null } = {}) {
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const state = {
     screen: 'start',
     characterId: Object.keys(data.characters)[0],
-    monsterId: Object.keys(data.monsters)[0],
-    enc: null, busy: false, menuOpen: false, runs: 0, seed: null,
-    ui: {}
+    run: null, enc: null, meta: null,
+    busy: false, menuOpen: false, runs: 0,
+    ui: {}, map: null
   };
 
   document.addEventListener('keydown', onKey);
   showStart();
 
-  /* ======================= Start screen ======================= */
+  /* =========================== Start =========================== */
   function showStart() {
     state.screen = 'start';
-    state.enc = null;
-    const monster = createMonster(data.monsters[state.monsterId]);
+    state.run = null;
+    const floorDef = getFloorDef(data.floors, 1);
 
     const choices = Object.values(data.characters).map((preset, i) => {
       const c = createCharacter(preset, data.items);
@@ -59,42 +62,197 @@ export function mountGame(root, data, { seed = null } = {}) {
           el('span', { className: 'choice-key', ariaHidden: 'true' }, String(i + 1)),
           el('span', { className: 'choice-name display' }, c.name),
           el('span', { className: 'choice-blurb' }, preset.blurb || BLURBS[preset.id] || `${c.armor.name}, ${c.attack.name.toLowerCase()}.`),
-          statList([
-            ['HP', c.maxHp], ['AC', c.ac],
-            ['Attack', signed(c.attack.bonus)], ['Damage', damageText(c.attack)],
-            ['Draughts', draughts]
-          ])
+          statList([['HP', c.maxHp], ['AC', c.ac], ['Attack', signed(c.attack.bonus)], ['Damage', damageText(c.attack)], ['Draughts', draughts]])
         ])
       ]);
     });
 
-    const startBtn = el('button', { className: 'btn btn-primary', type: 'button' }, 'Start encounter');
-    startBtn.addEventListener('click', startEncounter);
+    const startBtn = el('button', { className: 'btn btn-primary', type: 'button' }, 'Enter the cave');
+    startBtn.addEventListener('click', startRun);
 
     root.replaceChildren(el('section', { className: 'screen start-screen' }, [
       backLink(),
       el('h1', { className: 'display title' }, 'Into the tunnel'),
-      el('p', { className: 'lede' }, `Something moves in the dark ahead. A ${monster.name.toLowerCase()}, by the smell of it. Choose who goes in.`),
+      el('p', { className: 'lede' }, 'The cave runs down in floors. Each floor ends at a chest, and something always guards it. Choose who goes in.'),
       el('fieldset', { className: 'choices' }, [el('legend', { className: 'sr-only' }, 'Choose a fighter'), ...choices]),
-      el('p', { className: 'foe-line' }, `Opponent: ${monster.name}, ${monster.maxHp} HP, AC ${monster.ac}.`),
+      el('p', { className: 'foe-line' }, `Floor 1: ${floorDef.name}. Goblins, a crevice, and a guarded chest.`),
       startBtn,
       el('p', { className: 'key-help' }, 'Keys: 1 or 2 to choose, Enter to start.')
     ]));
     focusSoon(root.querySelector('.choice-input:checked'));
   }
 
-  /* ======================= Encounter screen ======================= */
   function nextSeed() {
     state.runs += 1;
     if (seed == null) return String(Math.floor(Math.random() * 1e9));
     return state.runs === 1 ? seed : `${seed}-${state.runs}`;
   }
 
-  function startEncounter() {
-    const player = createCharacter(data.characters[state.characterId], data.items);
-    const monster = createMonster(data.monsters[state.monsterId]);
-    state.seed = nextSeed();
-    state.enc = createEncounter(player, monster, state.seed);
+  function startRun() {
+    state.run = createRun(data, { characterId: state.characterId, runSeed: nextSeed() });
+    showMap();
+  }
+
+  /* =========================== Floor map =========================== */
+  function showMap() {
+    const { run } = state;
+    state.screen = 'map';
+    state.busy = false;
+    const ui = state.ui = {};
+
+    const mapBox = el('div', { className: 'map-box' });
+    ui.here = el('div', { className: 'here-card' });
+    ui.preview = el('p', { className: 'preview-line', ariaLive: 'polite' });
+    ui.status = el('div', { className: 'status-card' });
+    ui.drink = el('button', { className: 'btn btn-quiet', type: 'button', ariaKeyShortcuts: 'h' }, 'Drink draught (H)');
+    ui.drink.addEventListener('click', drink);
+    ui.context = el('button', { className: 'btn btn-primary', type: 'button', hidden: true });
+    ui.context.addEventListener('click', contextAction);
+    ui.log = el('ol', { className: 'log-list map-log', ariaLive: 'polite', ariaRelevant: 'additions', ariaLabel: 'Exploration log' });
+
+    root.replaceChildren(el('section', { className: 'screen map-screen' }, [
+      el('header', { className: 'enc-head' }, [
+        backLink(),
+        el('h1', { className: 'display title' }, `Floor ${run.floorNumber} · ${run.def.name}`),
+        el('p', { className: 'round-count' }, `Seed ${run.runSeed}`)
+      ]),
+      el('div', { className: 'map-layout' }, [
+        el('div', { className: 'map-col' }, [
+          mapBox,
+          el('p', { className: 'key-help' }, 'Click a lit passage or use the arrow keys. H drinks a draught.')
+        ]),
+        el('aside', { className: 'side-col' }, [
+          ui.status, ui.here, ui.preview,
+          el('div', { className: 'side-actions' }, [ui.context, ui.drink]),
+          el('section', { className: 'log-panel map-log-panel', ariaLabel: 'Exploration log' }, [ui.log])
+        ])
+      ])
+    ]));
+
+    state.map = createMapView(mapBox, run, {
+      onMove: id => travel(id),
+      onPreview: id => preview(id)
+    });
+    run.log.forEach(line => appendLog(ui.log, line, 'note'));
+    ui.logCount = run.log.length;
+    refreshMap();
+    focusSoon(root.querySelector('.node.is-reachable') || ui.context);
+  }
+
+  function refreshMap() {
+    const { run, ui } = state;
+    state.map.update();
+
+    // new log lines since last refresh
+    for (let i = ui.logCount; i < run.log.length; i++) appendLog(ui.log, run.log[i], classify(run.log[i]));
+    ui.logCount = run.log.length;
+
+    const p = run.player();
+    const draughts = Object.entries(run.inventory).reduce((n, [id, c]) => n + (data.items.consumables[id]?.heal != null ? c : 0), 0);
+    const tokens = run.inventory['save-token'] || 0;
+    const fill = el('div', { className: 'hp-fill' });
+    fill.style.width = `${(run.hp / p.maxHp) * 100}%`;
+    const low = run.hp / p.maxHp <= 0.35;
+    ui.status.replaceChildren(
+      el('p', { className: 'fighter-role' }, 'You'),
+      el('h2', { className: 'fighter-name display' }, p.name),
+      el('div', {
+        className: `hp-bar ${low ? 'is-low' : ''}`, role: 'progressbar',
+        ariaValuemin: '0', ariaValuemax: String(p.maxHp), ariaValuenow: String(run.hp),
+        ariaLabel: `${p.name} HP: ${run.hp} of ${p.maxHp}`
+      }, [fill]),
+      el('p', { className: 'hp-text' }, `${run.hp} / ${p.maxHp} HP`),
+      statList([
+        ['AC', p.ac], ['Weapon', `${p.attack.name} ${damageText(p.attack)}`],
+        ['Gold', run.gold], ['Draughts', draughts], ...(tokens ? [['Save tokens', tokens]] : [])
+      ])
+    );
+
+    const here = run.node(run.position);
+    ui.here.replaceChildren(
+      el('p', { className: 'fighter-role' }, 'You are at'),
+      el('h3', { className: 'display here-title' }, here.label),
+      el('p', { className: 'here-text' }, run.describe(here.id))
+    );
+
+    ui.drink.disabled = !run.canDrink() || state.busy;
+    if (run.canOpenChest()) { ui.context.hidden = false; ui.context.textContent = 'Open chest (Enter)'; }
+    else if (run.canDescend()) { ui.context.hidden = false; ui.context.textContent = 'Descend (Enter)'; }
+    else ui.context.hidden = true;
+    ui.context.disabled = state.busy;
+  }
+
+  function preview(id) {
+    const { run, ui } = state;
+    if (!ui.preview) return;
+    if (!id || id === run.position) { ui.preview.textContent = ''; return; }
+    const n = run.node(id);
+    ui.preview.textContent = `${run.canMoveTo(id) ? 'Ahead' : 'Out of reach'}: ${n.label}. ${run.describe(id)}`;
+  }
+
+  async function travel(id) {
+    const { run } = state;
+    if (state.screen !== 'map' || state.busy) return;
+    if (!run.canMoveTo(id)) { state.map.flash(id, 'is-denied'); return; }
+    const ev = run.moveTo(id);
+    refreshMap();
+
+    if (ev.type === 'crevice' && !ev.success) {
+      state.map.flash(id);
+      requestAnimationFrame(() => state.map.focusNode(run.position));
+      return;
+    }
+    if (ev.type === 'encounter') {
+      state.busy = true;
+      refreshMap();
+      await wait(reduceMotion.matches ? 0 : ARRIVE_MS);
+      state.busy = false;
+      beginEncounter();
+      return;
+    }
+    if (ev.type === 'chest' && run.canOpenChest()) focusSoon(state.ui.context);
+    else requestAnimationFrame(() => state.map.focusNode(run.position));   // announces "You are here"
+  }
+
+  function drink() {
+    if (!state.run.canDrink()) return;
+    state.run.drinkDraught();
+    refreshMap();
+  }
+
+  function contextAction() {
+    const { run } = state;
+    if (state.busy) return;
+    if (run.canOpenChest()) {
+      run.openChest();
+      refreshMap();
+      if (run.status === 'defeat') return setTimeout(() => showRunEnd('defeat'), reduceMotion.matches ? 0 : OUTCOME_DELAY);
+      focusSoon(state.ui.context);
+    } else if (run.canDescend()) {
+      run.descend();
+      showRunEnd('complete');
+    }
+  }
+
+  function moveByArrow(dx, dy) {
+    const { run } = state;
+    const here = run.node(run.position);
+    let best = null, bestScore = 0.35;
+    for (const id of run.moves()) {
+      const n = run.node(id);
+      const vx = n.x - here.x, vy = n.y - here.y;
+      const len = Math.hypot(vx, vy) || 1;
+      const score = (vx * dx + vy * dy) / len;
+      if (score > bestScore) { bestScore = score; best = id; }
+    }
+    if (best) travel(best);
+  }
+
+  /* =========================== Encounter =========================== */
+  function beginEncounter() {
+    const { enc, meta } = state.run.startEncounter();
+    state.enc = enc;
+    state.meta = meta;
     state.busy = false;
     state.menuOpen = false;
     state.screen = 'encounter';
@@ -102,23 +260,18 @@ export function mountGame(root, data, { seed = null } = {}) {
   }
 
   function renderEncounter() {
-    const { enc } = state;
+    const { enc, meta } = state;
     const ui = state.ui = {};
 
     ui.round = el('p', { className: 'round-count' }, 'Round 0');
     ui.player = fighterCard(enc.player, 'player', 'You');
-    ui.monster = fighterCard(enc.monster, 'monster', 'Foe');
-
+    ui.monster = fighterCard(enc.monster, 'monster', meta.total > 1 ? `Foe ${meta.index + 1} of ${meta.total}` : 'Foe');
     ui.log = el('ol', { className: 'log-list', ariaLive: 'polite', ariaRelevant: 'additions', ariaLabel: 'Combat log' });
-    const logPanel = el('section', { className: 'log-panel', ariaLabel: 'Combat log' }, [ui.log]);
 
     ui.buttons = {};
     const bar = el('div', { className: 'actions', role: 'group', ariaLabel: 'Actions' }, ACTIONS.map(def => {
       const count = el('span', { className: 'action-count' });
-      const b = el('button', {
-        className: `action action-${def.action}`, type: 'button', title: def.hint,
-        ariaKeyShortcuts: def.key
-      }, [
+      const b = el('button', { className: `action action-${def.action}`, type: 'button', title: def.hint, ariaKeyShortcuts: def.key }, [
         el('span', { className: 'action-key', ariaHidden: 'true' }, def.key),
         el('span', { className: 'action-label' }, def.label),
         el('span', { className: 'action-hint' }, def.hint),
@@ -135,17 +288,17 @@ export function mountGame(root, data, { seed = null } = {}) {
     root.replaceChildren(el('section', { className: 'screen encounter-screen' }, [
       el('header', { className: 'enc-head' }, [
         backLink(),
-        el('h1', { className: 'display title' }, `A ${enc.monster.name.toLowerCase()} blocks the way`),
+        el('h1', { className: 'display title' }, meta.node.label),
         ui.round
       ]),
       el('div', { className: 'arena' }, [ui.player.card, el('span', { className: 'versus display', ariaHidden: 'true' }, 'vs'), ui.monster.card]),
-      logPanel,
+      el('section', { className: 'log-panel', ariaLabel: 'Combat log' }, [ui.log]),
       el('div', { className: 'action-dock' }, [ui.menu, bar]),
-      el('p', { className: 'seed-line' }, `Seed ${state.seed}`),
+      el('p', { className: 'seed-line' }, `Seed ${state.run.runSeed}`),
       ui.overlay
     ]));
 
-    enc.log.forEach(line => addLine(line, 'note'));
+    enc.log.forEach(line => appendLog(ui.log, line, 'note'));
     updateHp(enc.player.hp, enc.monster.hp);
     refreshButtons();
     focusSoon(ui.buttons.light.el);
@@ -153,16 +306,13 @@ export function mountGame(root, data, { seed = null } = {}) {
 
   function fighterCard(c, side, role) {
     const fill = el('div', { className: 'hp-fill' });
-    const bar = el('div', {
-      className: 'hp-bar', role: 'progressbar',
-      ariaValuemin: '0', ariaValuemax: String(c.maxHp), ariaValuenow: String(c.hp)
-    }, [fill]);
+    const bar = el('div', { className: 'hp-bar', role: 'progressbar', ariaValuemin: '0', ariaValuemax: String(c.maxHp), ariaValuenow: String(c.hp) }, [fill]);
     const text = el('p', { className: 'hp-text' });
-    const stats = [['AC', c.ac], ['Attack', signed(c.attack.bonus)], ['Damage', damageText(c.attack)]];
     const card = el('article', { className: `fighter fighter-${side}` }, [
       el('p', { className: 'fighter-role' }, role),
       el('h2', { className: 'fighter-name display' }, c.name),
-      bar, text, statList(stats)
+      bar, text,
+      statList([['AC', c.ac], ['Attack', signed(c.attack.bonus)], ['Damage', damageText(c.attack)]])
     ]);
     return { card, bar, fill, text, max: c.maxHp, name: c.name };
   }
@@ -188,7 +338,6 @@ export function mountGame(root, data, { seed = null } = {}) {
     const inv = Object.values(enc.player.inventory || {});
     const healing = inv.filter(i => i.heal != null).reduce((n, i) => n + i.count, 0);
     const packCount = inv.reduce((n, i) => n + i.count, 0);
-
     for (const def of ACTIONS) {
       const b = ui.buttons[def.action];
       let enabled = !state.busy && !enc.outcome;
@@ -200,7 +349,6 @@ export function mountGame(root, data, { seed = null } = {}) {
     ui.round.textContent = `Round ${enc.round}`;
   }
 
-  /* ======================= Actions ======================= */
   function trigger(action) {
     if (state.screen !== 'encounter' || state.busy || state.enc.outcome) return;
     const b = state.ui.buttons[action];
@@ -212,40 +360,33 @@ export function mountGame(root, data, { seed = null } = {}) {
 
   async function perform(action, options = {}) {
     const { enc, ui } = state;
-    const focusedAction = Object.entries(ui.buttons).find(([, b]) => b.el === document.activeElement)?.[0];
+    const focused = Object.entries(ui.buttons).find(([, b]) => b.el === document.activeElement)?.[0];
     const before = { p: enc.player.hp, m: enc.monster.hp };
-
     let result;
-    try {
-      result = enc.act(action, options);
-    } catch (err) {
-      addLine(err.message, 'error');
-      return;
-    }
+    try { result = enc.act(action, options); }
+    catch (err) { appendLog(ui.log, err.message, 'error'); return; }
 
     state.busy = true;
     refreshButtons();
     await playRound(result, before);
-    updateHp(enc.player.hp, enc.monster.hp);   // final sync with engine state
+    updateHp(enc.player.hp, enc.monster.hp);
     state.busy = false;
     refreshButtons();
 
     if (enc.outcome) {
       await wait(reduceMotion.matches ? 0 : OUTCOME_DELAY);
-      showOutcome();
+      showOutcome(state.run.finishEncounter());
     } else {
-      const target = ui.buttons[action === 'heal' && options.item ? 'item' : focusedAction || ''];
+      const target = ui.buttons[options.item ? 'item' : focused || ''];
       if (target && !target.el.disabled) target.el.focus();
-      else if (focusedAction) ui.buttons.light.el.focus();
+      else if (focused) ui.buttons.light.el.focus();
     }
   }
 
-  /** Splits a round into steps (log lines + HP at that moment) using the round's events. */
   function buildSteps(result, before) {
     const lines = result.lines.slice();
     let p = before.p, m = before.m;
     const steps = [{ lines: lines.splice(0, 1), p, m, cls: 'round' }];
-
     for (const ev of result.events) {
       let n = 1, cls = 'note', hit = null, delta = 0;
       if (ev.type === 'attack') {
@@ -257,18 +398,14 @@ export function mountGame(root, data, { seed = null } = {}) {
           if (ev.by === 'player') { m = Math.max(0, m - ev.damage); hit = 'monster'; }
           else { p = Math.max(0, p - ev.damage); hit = 'player'; }
         }
-      } else if (ev.type === 'heal') {
-        cls = 'heal'; delta = ev.restored; hit = 'player'; p = ev.after;
-      } else if (ev.type === 'outcome') {
-        cls = 'outcome';
-      } else if (ev.type === 'flee') {
-        cls = ev.escaped ? 'heal' : 'miss';
-      }
+      } else if (ev.type === 'heal') { cls = 'heal'; delta = ev.restored; hit = 'player'; p = ev.after; }
+      else if (ev.type === 'outcome') cls = 'outcome';
+      else if (ev.type === 'flee') cls = ev.escaped ? 'heal' : 'miss';
       steps.push({ lines: lines.splice(0, n), p, m, cls, hit, delta, heal: ev.type === 'heal' });
     }
-
-    const mismatch = lines.length > 0 || steps.some(s => s.lines.length === 0);
-    if (mismatch) return [{ lines: result.lines.slice(), p: state.enc.player.hp, m: state.enc.monster.hp, cls: 'note' }];
+    if (lines.length || steps.some(s => !s.lines.length)) {
+      return [{ lines: result.lines.slice(), p: state.enc.player.hp, m: state.enc.monster.hp, cls: 'note' }];
+    }
     return steps;
   }
 
@@ -278,7 +415,7 @@ export function mountGame(root, data, { seed = null } = {}) {
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
       if (i > 0 && delay) await wait(delay);
-      s.lines.forEach((line, j) => addLine(line, j === 0 ? s.cls : (s.cls === 'crit' || s.cls === 'hit' ? 'damage' : s.cls)));
+      s.lines.forEach((line, j) => appendLog(state.ui.log, line, j === 0 ? s.cls : (s.cls === 'crit' || s.cls === 'hit' ? 'damage' : s.cls)));
       updateHp(s.p, s.m);
       if (s.hit) feedback(s.hit === 'player' ? state.ui.player : state.ui.monster, s.delta, s.heal);
     }
@@ -294,13 +431,7 @@ export function mountGame(root, data, { seed = null } = {}) {
     setTimeout(() => float.remove(), 1000);
   }
 
-  function addLine(text, cls = 'note') {
-    const li = el('li', { className: `log-line is-${cls}` }, text);
-    state.ui.log.append(li);
-    state.ui.log.scrollTo({ top: state.ui.log.scrollHeight, behavior: reduceMotion.matches ? 'auto' : 'smooth' });
-  }
-
-  /* ======================= Item menu ======================= */
+  /* ---------- item menu ---------- */
   function openMenu() {
     const { enc, ui } = state;
     const items = Object.values(enc.player.inventory || {}).filter(i => i.count > 0);
@@ -309,16 +440,13 @@ export function mountGame(root, data, { seed = null } = {}) {
       const b = el('button', { className: 'menu-item', type: 'button', disabled: !usable }, [
         el('span', { className: 'action-key', ariaHidden: 'true' }, String(i + 1)),
         el('span', { className: 'menu-name' }, item.name),
-        el('span', { className: 'menu-meta' }, usable
-          ? `${item.count} left · restores ${item.heal} HP`
-          : `${item.count} left · no use in combat yet`)
+        el('span', { className: 'menu-meta' }, usable ? `${item.count} left · restores ${item.heal} HP` : `${item.count} left · no use in combat yet`)
       ]);
       b.addEventListener('click', () => { closeMenu(false); perform('heal', { item: item.id }); });
       return b;
     });
     const cancel = el('button', { className: 'menu-cancel', type: 'button' }, 'Close (Esc)');
     cancel.addEventListener('click', () => closeMenu());
-
     ui.menu.replaceChildren(
       el('p', { className: 'menu-title display' }, 'Your pack'),
       ...(buttons.length ? buttons : [el('p', { className: 'menu-empty' }, 'Your pack is empty.')]),
@@ -338,45 +466,75 @@ export function mountGame(root, data, { seed = null } = {}) {
     if (returnFocus && !state.ui.buttons.item.el.disabled) state.ui.buttons.item.el.focus();
   }
 
-  /* ======================= Outcome ======================= */
-  function showOutcome() {
+  /* ---------- outcome dialog ---------- */
+  function showOutcome(res) {
     const { enc, ui } = state;
     state.screen = 'outcome';
     const copy = OUTCOME_COPY[enc.outcome];
-    const draughts = Object.values(enc.player.inventory || {}).reduce((n, i) => n + i.count, 0);
+    const monster = enc.monster.name.toLowerCase();
+    const pack = Object.values(enc.player.inventory || {}).reduce((n, i) => n + (i.heal != null ? i.count : 0), 0);
 
-    const primary = el('button', { className: 'btn btn-primary', type: 'button' }, BUTTON_TEXT[copy.primary]);
-    const secondary = el('button', { className: 'btn btn-quiet', type: 'button' }, BUTTON_TEXT[copy.secondary]);
-    primary.addEventListener('click', () => outcomeAction(copy.primary));
-    secondary.addEventListener('click', () => outcomeAction(copy.secondary));
+    let text = copy.text(monster);
+    let buttons;
+    if (res.outcome === 'win' && res.next === 'encounter') {
+      text += ` ${res.remaining} more ${res.remaining === 1 ? 'goblin steps' : 'goblins step'} forward.`;
+      buttons = [['Next fight', beginEncounter]];
+    } else if (res.outcome === 'win') {
+      text += ` ${state.meta.node.label} is clear.`;
+      buttons = [['Continue', showMap]];
+    } else if (res.outcome === 'defeat') {
+      buttons = [['New run', startRun], ['Change fighter', showStart]];
+    } else {
+      buttons = [['Back to the map', showMap]];
+    }
 
-    const dialog = el('div', {
-      className: `outcome is-${enc.outcome}`, role: 'dialog', ariaModal: 'true', ariaLabelledby: 'outcome-title'
-    }, [
-      el('h2', { className: 'display outcome-title', id: 'outcome-title' }, copy.title),
-      el('p', { className: 'outcome-text' }, copy.text(enc.monster.name.toLowerCase())),
-      statList([['Rounds', enc.round], ['HP left', `${enc.player.hp} / ${enc.player.maxHp}`], ['Pack', draughts]]),
-      el('div', { className: 'outcome-buttons' }, [primary, secondary])
-    ]);
-    dialog.addEventListener('keydown', e => {      // keep Tab inside the dialog
-      if (e.key !== 'Tab') return;
-      const order = [primary, secondary];
-      const i = order.indexOf(document.activeElement);
-      e.preventDefault();
-      order[(i + (e.shiftKey ? -1 : 1) + order.length) % order.length].focus();
+    const btnEls = buttons.map(([label, fn], i) => {
+      const b = el('button', { className: `btn ${i === 0 ? 'btn-primary' : 'btn-quiet'}`, type: 'button' }, label);
+      b.addEventListener('click', fn);
+      return b;
     });
-
+    const dialog = el('div', { className: `outcome is-${enc.outcome}`, role: 'dialog', ariaModal: 'true', ariaLabelledby: 'outcome-title' }, [
+      el('h2', { className: 'display outcome-title', id: 'outcome-title' }, copy.title),
+      el('p', { className: 'outcome-text' }, text),
+      statList([['Rounds', enc.round], ['HP left', `${enc.player.hp} / ${enc.player.maxHp}`], ['Draughts', pack]]),
+      el('div', { className: 'outcome-buttons' }, btnEls)
+    ]);
+    trapTab(dialog, btnEls);
     ui.overlay.replaceChildren(dialog);
     ui.overlay.hidden = false;
-    focusSoon(primary);
+    focusSoon(btnEls[0]);
   }
 
-  function outcomeAction(kind) {
-    if (kind === 'retry' || kind === 'again') startEncounter();
-    else showStart();   // "continue" and "change" both return here until the cave map exists
+  /* =========================== Run end =========================== */
+  function showRunEnd(kind) {
+    const { run } = state;
+    state.screen = 'end';
+    const p = run.player();
+    const won = kind === 'complete';
+    const newRun = el('button', { className: 'btn btn-primary', type: 'button' }, won ? 'New run' : 'Try again');
+    const change = el('button', { className: 'btn btn-quiet', type: 'button' }, 'Change fighter');
+    newRun.addEventListener('click', startRun);
+    change.addEventListener('click', showStart);
+
+    root.replaceChildren(el('section', { className: 'screen end-screen' }, [
+      backLink(),
+      el('div', { className: `outcome end-card ${won ? 'is-win' : 'is-defeat'}` }, [
+        el('h1', { className: 'display outcome-title' }, won ? `Floor ${run.floorNumber} cleared` : 'Run over'),
+        el('p', { className: 'outcome-text' }, won
+          ? 'The chest is empty and the way down is open, but the stairs are sealed for now. Deeper floors are on their way.'
+          : `${p.name} won't be leaving ${run.def.name.toLowerCase()}.`),
+        statList([
+          ['HP', `${run.hp} / ${p.maxHp}`], ['Gold', run.gold],
+          ['Weapon', p.attack.name], ['Armor', p.armor.name],
+          ['Save tokens', run.inventory['save-token'] || 0]
+        ]),
+        el('div', { className: 'outcome-buttons' }, [newRun, change])
+      ])
+    ]));
+    focusSoon(newRun);
   }
 
-  /* ======================= Keyboard ======================= */
+  /* =========================== Keyboard =========================== */
   function onKey(e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.target.matches?.('input[type="text"], textarea, select')) return;
@@ -391,7 +549,16 @@ export function mountGame(root, data, { seed = null } = {}) {
         e.preventDefault();
       } else if (e.key === 'Enter' && !e.target.matches?.('button, a')) {
         e.preventDefault();
-        startEncounter();
+        startRun();
+      }
+      return;
+    }
+
+    if (state.screen === 'map') {
+      if (ARROWS[e.key]) { e.preventDefault(); moveByArrow(...ARROWS[e.key]); return; }
+      if (e.key === 'h' || e.key === 'H') { e.preventDefault(); drink(); return; }
+      if (e.key === 'Enter' && !e.target.matches?.('button, a, .node')) {
+        if (!state.ui.context.hidden) { e.preventDefault(); contextAction(); }
       }
       return;
     }
@@ -402,10 +569,7 @@ export function mountGame(root, data, { seed = null } = {}) {
       if (e.key === 'Escape') { e.preventDefault(); closeMenu(); return; }
       const items = [...state.ui.menu.querySelectorAll('.menu-item')];
       const n = Number(e.key);
-      if (n >= 1 && n <= items.length) {
-        e.preventDefault();
-        if (!items[n - 1].disabled) items[n - 1].click();
-      }
+      if (n >= 1 && n <= items.length) { e.preventDefault(); if (!items[n - 1].disabled) items[n - 1].click(); }
       return;
     }
 
@@ -421,7 +585,7 @@ export function mountGame(root, data, { seed = null } = {}) {
   }
 }
 
-/* ======================= Helpers ======================= */
+/* =========================== Helpers =========================== */
 function el(tag, props = {}, children) {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
@@ -435,14 +599,33 @@ function el(tag, props = {}, children) {
   return n;
 }
 
-function statList(pairs) {
-  return el('dl', { className: 'stat-list' }, pairs.map(([k, v]) =>
-    el('div', {}, [el('dt', {}, k), el('dd', {}, String(v))])));
+function appendLog(list, text, cls = 'note') {
+  list.append(el('li', { className: `log-line is-${cls}` }, text));
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  list.scrollTo({ top: list.scrollHeight, behavior: reduce ? 'auto' : 'smooth' });
 }
 
-function backLink() {
-  return el('a', { className: 'back-link', href: '../index.html' }, 'Back to the base');
+function classify(line) {
+  if (/Failure|bites|collapses|falls|can't fit/i.test(line)) return 'miss';
+  if (/Inside:|Disarmed|squeeze through|clear\.|\+\d+ HP/i.test(line)) return 'heal';
+  if (/block|blocks|guards/i.test(line)) return 'hit';
+  return 'note';
 }
+
+function trapTab(dialog, order) {
+  dialog.addEventListener('keydown', e => {
+    if (e.key !== 'Tab' || order.length < 1) return;
+    const i = order.indexOf(document.activeElement);
+    e.preventDefault();
+    order[(i + (e.shiftKey ? -1 : 1) + order.length) % order.length].focus();
+  });
+}
+
+function statList(pairs) {
+  return el('dl', { className: 'stat-list' }, pairs.map(([k, v]) => el('div', {}, [el('dt', {}, k), el('dd', {}, String(v))])));
+}
+
+function backLink() { return el('a', { className: 'back-link', href: '../index.html' }, 'Back to the base'); }
 
 const signed = n => (n >= 0 ? `+${n}` : `−${Math.abs(n)}`);
 const damageText = a => (a.modifier ? `${a.dice}${a.modifier > 0 ? '+' : '−'}${Math.abs(a.modifier)}` : a.dice);
