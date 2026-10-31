@@ -1,0 +1,44 @@
+{
+  "floors": [
+    {
+      "number": 1,
+      "name": "The upper tunnels",
+      "intro": "Damp rock, old torch soot, and the smell of goblin.",
+      "tier": 1,
+      "nodes": { "min": 6, "max": 9 },
+      "sidePassageChance": 0.5,
+      "labels": { "entrance": "Cave mouth", "guard": "Guard post", "chest": "Treasure nook" },
+      "routes": {
+        "tunnel": {
+          "length": [1, 2],
+          "monsters": ["goblin"],
+          "labels": { "fight": "Narrow tunnel", "passage": "Tunnel bend" }
+        },
+        "hall": {
+          "length": [1, 2],
+          "monsters": ["goblin", "goblin", "goblin"],
+          "labels": { "fight": "Main hall", "passage": "Hall antechamber" }
+        },
+        "crevice": {
+          "length": [1, 2],
+          "check": { "ability": "dex", "dc": 12 },
+          "labels": { "crevice": "Crevice", "passage": "Beyond the crevice" }
+        }
+      },
+      "guard": { "monsters": ["goblin"] },
+      "chest": {
+        "trapChance": 0.15,
+        "disarm": { "ability": "dex", "dc": 12 },
+        "trapDamage": "1d6",
+        "loot": {
+          "gold": "2d6+4",
+          "healing": { "item": "healing-draught", "count": 1, "bonusChance": 0.3 },
+          "gearChance": 0.4,
+          "gearFallbackGold": "1d6+2",
+          "saveTokenChance": 0.05,
+          "saveTokenItem": "save-token"
+        }
+      }
+    }
+  ]
+}
