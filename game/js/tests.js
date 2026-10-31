@@ -1,4 +1,3 @@
-
 // Acceptance tests and batch simulation. No DOM.
 // Browser: imported by main.js (?test panel) and exposed as window.RPG.runTests().
 // Node:    node game/js/tests.js [seed]   (exit code 1 if anything fails)
@@ -7,6 +6,8 @@ import { d20 } from './dice.js';
 import * as rules from './rules.js';
 import { createCharacter, createMonster } from './entity.js';
 import { createEncounter, runEncounter, OUTCOMES, POLICIES, ROUND_LIMIT } from './combat.js';
+import { generateFloor, getFloorDef, findPath, neighbors, ROUTE_TYPES } from './floor.js';
+import { openChest } from './chest.js';
 
 const pct = x => `${(x * 100).toFixed(2)}%`;
 
@@ -171,6 +172,84 @@ export function runAcceptanceTests(data, { seed = 1 } = {}) {
           `Every round had exactly one monster attack and no free attack. Empty inventory throws and keeps the round.`);
   }
 
+  // 6. Same seed -> same floor; different seeds -> different floors
+  if (data.floors) {
+    const a = JSON.stringify(generateFloor(`${seed}:floorA`, 1, data.floors));
+    const b = JSON.stringify(generateFloor(`${seed}:floorA`, 1, data.floors));
+    const differs = [1, 2, 3, 4, 5].some(k => JSON.stringify(generateFloor(`${seed}:floorB${k}`, 1, data.floors)) !== a);
+    add('6. Same seed gives the same floor; other seeds give different layouts', a === b && differs,
+      `Identical with same seed: ${a === b}. Different with other seeds: ${differs}.`);
+  }
+
+  // 7. 1000 seeds: structure and a valid entrance-to-exit path
+  if (data.floors) {
+    const def = getFloorDef(data.floors, 1);
+    const problems = [];
+    const sizes = {};
+    let sidePassages = 0;
+    for (let i = 0; i < 1000; i++) {
+      const f = generateFloor(`${seed}:valid:${i}`, 1, data.floors);
+      const byId = Object.fromEntries(f.nodes.map(n => [n.id, n]));
+      const tag = `seed ${i}`;
+      sizes[f.nodes.length] = (sizes[f.nodes.length] || 0) + 1;
+      if (f.edges.length > f.nodes.length + 1) sidePassages++;   // a tree has nodes + 1 edges here; one more means a side passage
+
+      if (f.nodes.length < def.nodes.min || f.nodes.length > def.nodes.max) problems.push(`${tag}: ${f.nodes.length} nodes`);
+      for (const t of ROUTE_TYPES) if (!f.routes[t]?.length) problems.push(`${tag}: missing ${t}`);
+
+      const tunnelFights = f.routes.tunnel.map(id => byId[id]).filter(n => n.kind === 'fight');
+      if (tunnelFights.length !== 1 || tunnelFights[0].monsters.length !== 1) problems.push(`${tag}: tunnel must hold exactly one goblin`);
+      const hallFights = f.routes.hall.map(id => byId[id]).filter(n => n.kind === 'fight');
+      if (hallFights.length !== 1 || hallFights[0].monsters.length !== 3) problems.push(`${tag}: hall must hold three goblins`);
+      const crevices = f.routes.crevice.map(id => byId[id]).filter(n => n.kind === 'crevice');
+      if (crevices.length !== 1 || crevices[0].check.dc !== 12) problems.push(`${tag}: crevice needs one DC 12 check`);
+
+      if (byId[f.exit].kind !== 'chest') problems.push(`${tag}: exit is not the chest`);
+      const chestLinks = neighbors(f, f.exit);
+      if (chestLinks.length !== 1 || chestLinks[0] !== f.guard) problems.push(`${tag}: chest must be reachable only through the guard`);
+      if (!byId[f.guard].monsters.length) problems.push(`${tag}: guard post has no goblin`);
+
+      if (!findPath(f, f.entrance, f.exit)) problems.push(`${tag}: no path entrance to exit`);
+      if (!findPath(f, f.entrance, f.exit, new Set(f.routes.crevice))) problems.push(`${tag}: no path without the crevice`);
+      for (const n of f.nodes) if (!findPath(f, f.entrance, n.id)) problems.push(`${tag}: ${n.id} unreachable`);
+      if (problems.length > 10) break;
+    }
+    const dist = Object.keys(sizes).sort().map(k => `${k}: ${sizes[k]}`).join(', ');
+    add('7. 1000 floors all have a valid path from entrance to exit', problems.length === 0,
+      problems.length ? problems.slice(0, 5).join('; ')
+        : `All 1000 valid, including a path that avoids the crevice. Node counts ${dist}. Side passages on ${sidePassages}.`);
+  }
+
+  // 8. Trap rate across 1000 chests, plus trap damage and loot sanity
+  if (data.floors) {
+    const def = getFloorDef(data.floors, 1);
+    let trapped = 0, failed = 0, tokens = 0, gear = 0;
+    const problems = [];
+    for (let i = 0; i < 1000; i++) {
+      const f = generateFloor(`${seed}:chest:${i}`, 1, data.floors);
+      if (f.chest.trapped) trapped++;
+      const res = openChest({
+        chest: f.chest, def: def.chest, dexMod: 0, equipped: { armor: 'leather', weapon: 'shortsword' },
+        items: data.items, tier: def.tier, rng: createRng(`${seed}:open:${i}`)
+      });
+      if (res.trapped && !res.disarm.success) {
+        failed++;
+        if (res.damage < 1 || res.damage > 6) problems.push(`chest ${i}: trap damage ${res.damage}`);
+      }
+      if (!res.trapped && res.damage) problems.push(`chest ${i}: damage without a trap`);
+      if (res.gold < 6 || res.gold > 24) problems.push(`chest ${i}: gold ${res.gold}`);
+      if (!(res.items['healing-draught'] >= 1)) problems.push(`chest ${i}: no healing draught`);
+      if (res.saveToken) tokens++;
+      if (res.gear) gear++;
+    }
+    const rate = trapped / 1000;
+    const ok = Math.abs(rate - def.chest.trapChance) <= 0.035 && problems.length === 0;
+    add('8. About 15% of 1000 chests are trapped (±3.5 pp)', ok,
+      problems.length ? problems.slice(0, 5).join('; ')
+        : `${trapped} trapped = ${pct(rate)} (target ${pct(def.chest.trapChance)}). ` +
+          `${failed} failed disarms, damage always 1-6. Gear in ${gear}, save tokens in ${tokens} (target about 5%).`);
+  }
+
   return results;
 }
 
@@ -179,7 +258,7 @@ if (typeof window === 'undefined' && typeof process !== 'undefined' && process.a
     import.meta.url.endsWith('/' + process.argv[1].split(/[\\/]/).pop())) {
   const { readFileSync } = await import('node:fs');
   const load = n => JSON.parse(readFileSync(new URL(`../data/${n}.json`, import.meta.url), 'utf8'));
-  const data = { characters: load('characters'), items: load('items'), monsters: load('monsters') };
+  const data = { characters: load('characters'), items: load('items'), monsters: load('monsters'), floors: load('floors') };
   const seed = process.argv[2] ?? '1';
   const results = runAcceptanceTests(data, { seed });
   for (const r of results) console.log(`${r.pass ? 'PASS' : 'FAIL'}  ${r.name}\n      ${r.details}`);
