@@ -4,10 +4,12 @@ import { createCharacter, createMonster } from './entity.js';
 import { createRun } from './run.js';
 import { createMapView } from './mapview.js';
 import { getFloorDef } from './floor.js';
+import { buildBeats, createLinePicker, SPEEDS } from './beats.js';
+import { telegraph } from './ai.js';
 
-const STEP_MS = 420;        // delay between revealed steps of a combat round
-const OUTCOME_DELAY = 600;  // pause before the outcome dialog
+const OUTCOME_DELAY = 600;  // pause before a run-ending screen
 const ARRIVE_MS = 520;      // marker travel time before a fight starts
+const SPEED_KEY = 'aayush-rpg:speed';
 
 const ACTIONS = [
   { key: '1', action: 'light', label: 'Light', hint: 'Normal attack' },
@@ -38,6 +40,7 @@ export function mountGame(root, data, { seed = null } = {}) {
     characterId: Object.keys(data.characters)[0],
     run: null, enc: null, meta: null,
     busy: false, menuOpen: false, runs: 0,
+    speed: loadSpeed(reduceMotion.matches),
     ui: {}, map: null
   };
 
@@ -154,7 +157,7 @@ export function mountGame(root, data, { seed = null } = {}) {
     fill.style.width = `${(run.hp / p.maxHp) * 100}%`;
     const low = run.hp / p.maxHp <= 0.35;
     ui.status.replaceChildren(
-      el('p', { className: 'fighter-role' }, 'You'),
+      el('p', { className: 'fighter-role' }, `You · level ${run.level}`),
       el('h2', { className: 'fighter-name display' }, p.name),
       el('div', {
         className: `hp-bar ${low ? 'is-low' : ''}`, role: 'progressbar',
@@ -163,6 +166,7 @@ export function mountGame(root, data, { seed = null } = {}) {
       }, [fill]),
       el('p', { className: 'hp-text' }, `${run.hp} / ${p.maxHp} HP`),
       statList([
+        ['Level', run.level], ['XP', (() => { const x = run.xpProgress(); return x.next ? `${x.xp} / ${x.next}` : `${x.xp}`; })()],
         ['AC', p.ac], ['Weapon', `${p.attack.name} ${damageText(p.attack)}`],
         ['Gold', run.gold], ['Draughts', draughts], ...(tokens ? [['Save tokens', tokens]] : [])
       ])
@@ -253,6 +257,8 @@ export function mountGame(root, data, { seed = null } = {}) {
     const { enc, meta } = state.run.startEncounter();
     state.enc = enc;
     state.meta = meta;
+    state.pick = createLinePicker(data.lines, `${state.run.runSeed}:${meta.node.id}:${meta.index}:${enc.seed}`);
+    state.flags = { stance: telegraph(enc.monster).stance };
     state.busy = false;
     state.menuOpen = false;
     state.screen = 'encounter';
@@ -264,9 +270,9 @@ export function mountGame(root, data, { seed = null } = {}) {
     const ui = state.ui = {};
 
     ui.round = el('p', { className: 'round-count' }, 'Round 0');
-    ui.player = fighterCard(enc.player, 'player', 'You');
+    ui.player = fighterCard(enc.player, 'player', `You · level ${state.run.level}`);
     ui.monster = fighterCard(enc.monster, 'monster', meta.total > 1 ? `Foe ${meta.index + 1} of ${meta.total}` : 'Foe');
-    ui.log = el('ol', { className: 'log-list', ariaLive: 'polite', ariaRelevant: 'additions', ariaLabel: 'Combat log' });
+    ui.log = el('ol', { className: 'log-list log-rounds', ariaLive: 'polite', ariaRelevant: 'additions', ariaLabel: 'Combat log' });
 
     ui.buttons = {};
     const bar = el('div', { className: 'actions', role: 'group', ariaLabel: 'Actions' }, ACTIONS.map(def => {
@@ -289,17 +295,19 @@ export function mountGame(root, data, { seed = null } = {}) {
       el('header', { className: 'enc-head' }, [
         backLink(),
         el('h1', { className: 'display title' }, meta.node.label),
-        ui.round
+        el('div', { className: 'head-right' }, [speedControl(), ui.round])
       ]),
-      el('div', { className: 'arena' }, [ui.player.card, el('span', { className: 'versus display', ariaHidden: 'true' }, 'vs'), ui.monster.card]),
+      el('div', { className: 'arena' }, [ui.player.wrap, el('span', { className: 'versus display', ariaHidden: 'true' }, 'vs'), ui.monster.wrap]),
       el('section', { className: 'log-panel', ariaLabel: 'Combat log' }, [ui.log]),
       el('div', { className: 'action-dock' }, [ui.menu, bar]),
       el('p', { className: 'seed-line' }, `Seed ${state.run.runSeed}`),
       ui.overlay
     ]));
 
-    enc.log.forEach(line => appendLog(ui.log, line, 'note'));
+    const intro = startRoundGroup('Before the fight');
+    enc.log.forEach(line => addBeatLine(intro, { kind: 'note', text: line }));
     updateHp(enc.player.hp, enc.monster.hp);
+    updateStance(telegraph(enc.monster));
     refreshButtons();
     focusSoon(ui.buttons.light.el);
   }
@@ -308,13 +316,31 @@ export function mountGame(root, data, { seed = null } = {}) {
     const fill = el('div', { className: 'hp-fill' });
     const bar = el('div', { className: 'hp-bar', role: 'progressbar', ariaValuemin: '0', ariaValuemax: String(c.maxHp), ariaValuenow: String(c.hp) }, [fill]);
     const text = el('p', { className: 'hp-text' });
+    const bubble = el('div', { className: `bubble bubble-${side}`, ariaHidden: 'true' });
+    const stance = side === 'monster' ? el('div', { className: 'stance' }) : null;
     const card = el('article', { className: `fighter fighter-${side}` }, [
       el('p', { className: 'fighter-role' }, role),
       el('h2', { className: 'fighter-name display' }, c.name),
       bar, text,
-      statList([['AC', c.ac], ['Attack', signed(c.attack.bonus)], ['Damage', damageText(c.attack)]])
+      statList([['AC', c.ac], ['Attack', signed(c.attack.bonus)], ['Damage', damageText(c.attack)]]),
+      ...(stance ? [stance] : [])
     ]);
-    return { card, bar, fill, text, max: c.maxHp, name: c.name };
+    const wrap = el('div', { className: `fighter-wrap fighter-wrap-${side}` }, [bubble, card]);
+    return { wrap, card, bar, fill, text, bubble, stance, max: c.maxHp, name: c.name };
+  }
+
+  function updateStance(tell) {
+    const box = state.ui.monster?.stance;
+    if (!box || !tell) return;
+    const st = data.lines?.stances || {};
+    const main = st[tell.stance] || { label: tell.stance, line: '' };
+    const chips = [el('span', { className: `stance-chip is-${tell.stance}` }, [icon(tell.stance), main.label])];
+    if (tell.flee) chips.push(el('span', { className: `stance-chip is-${tell.flee}`, title: st[tell.flee]?.line || '' }, [icon(tell.flee), st[tell.flee]?.label || tell.flee]));
+    box.replaceChildren(
+      el('div', { className: 'stance-chips' }, chips),
+      el('p', { className: 'stance-line' }, main.line)
+    );
+    box.setAttribute('aria-label', `Stance: ${main.label}. ${main.line} ${tell.flee ? st[tell.flee]?.line || '' : ''}`);
   }
 
   function updateHp(playerHp, monsterHp) {
@@ -362,19 +388,21 @@ export function mountGame(root, data, { seed = null } = {}) {
     const { enc, ui } = state;
     const focused = Object.entries(ui.buttons).find(([, b]) => b.el === document.activeElement)?.[0];
     const before = { p: enc.player.hp, m: enc.monster.hp };
+    const itemName = action === 'heal' ? enc.healingItem(options.item)?.name : null;
+
     let result;
     try { result = enc.act(action, options); }
-    catch (err) { appendLog(ui.log, err.message, 'error'); return; }
+    catch (err) { addBeatLine(startRoundGroup('Note'), { kind: 'note', tone: 'hurt', text: err.message }); return; }
 
-    state.busy = true;
+    state.busy = true;                       // buttons stay disabled until every beat has finished
     refreshButtons();
-    await playRound(result, before);
+    const beats = buildBeats(result, { enc, before, pick: state.pick, flags: state.flags, item: itemName });
+    await playBeats(beats, result.round);
     updateHp(enc.player.hp, enc.monster.hp);
     state.busy = false;
     refreshButtons();
 
     if (enc.outcome) {
-      await wait(reduceMotion.matches ? 0 : OUTCOME_DELAY);
       showOutcome(state.run.finishEncounter());
     } else {
       const target = ui.buttons[options.item ? 'item' : focused || ''];
@@ -383,52 +411,78 @@ export function mountGame(root, data, { seed = null } = {}) {
     }
   }
 
-  function buildSteps(result, before) {
-    const lines = result.lines.slice();
-    let p = before.p, m = before.m;
-    const steps = [{ lines: lines.splice(0, 1), p, m, cls: 'round' }];
-    for (const ev of result.events) {
-      let n = 1, cls = 'note', hit = null, delta = 0;
-      if (ev.type === 'attack') {
-        const landed = ev.damage != null;
-        n = landed ? 2 : 1;
-        cls = ev.roll.crit ? 'crit' : landed ? 'hit' : 'miss';
-        if (landed) {
-          delta = -ev.damage;
-          if (ev.by === 'player') { m = Math.max(0, m - ev.damage); hit = 'monster'; }
-          else { p = Math.max(0, p - ev.damage); hit = 'player'; }
-        }
-      } else if (ev.type === 'heal') { cls = 'heal'; delta = ev.restored; hit = 'player'; p = ev.after; }
-      else if (ev.type === 'outcome') cls = 'outcome';
-      else if (ev.type === 'flee') cls = ev.escaped ? 'heal' : 'miss';
-      steps.push({ lines: lines.splice(0, n), p, m, cls, hit, delta, heal: ev.type === 'heal' });
-    }
-    if (lines.length || steps.some(s => !s.lines.length)) {
-      return [{ lines: result.lines.slice(), p: state.enc.player.hp, m: state.enc.monster.hp, cls: 'note' }];
-    }
-    return steps;
-  }
-
-  async function playRound(result, before) {
-    const steps = buildSteps(result, before);
-    const delay = reduceMotion.matches ? 0 : STEP_MS;
-    for (let i = 0; i < steps.length; i++) {
-      const s = steps[i];
-      if (i > 0 && delay) await wait(delay);
-      s.lines.forEach((line, j) => appendLog(state.ui.log, line, j === 0 ? s.cls : (s.cls === 'crit' || s.cls === 'hit' ? 'damage' : s.cls)));
-      updateHp(s.p, s.m);
-      if (s.hit) feedback(s.hit === 'player' ? state.ui.player : state.ui.monster, s.delta, s.heal);
+  /** Plays beats strictly one after another. The next beat starts only after the previous one's time is up. */
+  async function playBeats(beats, round) {
+    const list = startRoundGroup(`Round ${round}`);
+    for (const b of beats) {
+      addBeatLine(list, b);
+      updateHp(b.hp.p, b.hp.m);
+      if (b.float) floatNumber(b.float);
+      if (b.bubble) showBubble(b.bubble);
+      if (b.roll) pulse(b.actor);
+      if (b.stance) updateStance(b.stance);
+      const ms = beatMs();
+      if (ms) await wait(ms);
     }
   }
 
-  function feedback(f, delta, heal) {
-    if (!delta) return;
-    const float = el('span', { className: `float ${heal ? 'is-heal' : 'is-dmg'}`, ariaHidden: 'true' }, `${delta > 0 ? '+' : '−'}${Math.abs(delta)}`);
-    f.card.append(float);
-    f.card.classList.remove('is-hit', 'is-healed');
+  function startRoundGroup(title) {
+    const beatsList = el('ol', { className: 'log-beats' });
+    state.ui.log.append(el('li', { className: 'log-round' }, [el('p', { className: 'log-round-title' }, title), beatsList]));
+    return beatsList;
+  }
+
+  function addBeatLine(list, b) {
+    list.append(el('li', { className: `log-line is-${b.kind}${b.tone ? ` tone-${b.tone}` : ''}` }, b.text));
+    const box = state.ui.log;
+    box.scrollTo({ top: box.scrollHeight, behavior: beatMs() ? 'smooth' : 'auto' });
+  }
+
+  function floatNumber(f) {
+    const target = f.target === 'player' ? state.ui.player : state.ui.monster;
+    const n = el('span', { className: `float ${f.heal ? 'is-heal' : 'is-dmg'}${f.crit ? ' is-crit' : ''}`, ariaHidden: 'true' }, f.text);
+    target.card.append(n);
+    target.card.classList.remove('is-hit', 'is-healed');
+    void target.card.offsetWidth;
+    target.card.classList.add(f.heal ? 'is-healed' : 'is-hit');
+    setTimeout(() => n.remove(), 1100);
+  }
+
+  function showBubble(b) {
+    const f = b.target === 'player' ? state.ui.player : state.ui.monster;
+    clearTimeout(f.bubbleTimer);
+    f.bubble.textContent = b.text;
+    f.bubble.classList.toggle('is-narrate', !!b.narrate);
+    f.bubble.classList.remove('show');
+    void f.bubble.offsetWidth;
+    f.bubble.classList.add('show');
+    f.bubbleTimer = setTimeout(() => f.bubble.classList.remove('show'), Math.max(1800, beatMs() * 2.4));
+  }
+
+  function pulse(actor) {
+    const f = actor === 'player' ? state.ui.player : actor === 'monster' ? state.ui.monster : null;
+    if (!f) return;
+    f.card.classList.remove('is-rolling');
     void f.card.offsetWidth;
-    f.card.classList.add(heal ? 'is-healed' : 'is-hit');
-    setTimeout(() => float.remove(), 1000);
+    f.card.classList.add('is-rolling');
+  }
+
+  /* ---------- speed setting ---------- */
+  function beatMs() { return SPEEDS[state.speed] ?? SPEEDS.normal; }
+
+  function speedControl() {
+    const wrap = el('div', { className: 'speed', role: 'radiogroup', ariaLabel: 'Beat speed' }, [el('span', { className: 'speed-label' }, 'Speed')]);
+    const buttons = ['normal', 'fast', 'off'].map(k => {
+      const b = el('button', { className: 'speed-btn', type: 'button', role: 'radio', ariaChecked: String(state.speed === k) }, k[0].toUpperCase() + k.slice(1));
+      b.addEventListener('click', () => {
+        state.speed = k;
+        saveSpeed(k);
+        buttons.forEach((x, i) => x.setAttribute('aria-checked', String(['normal', 'fast', 'off'][i] === k)));
+      });
+      return b;
+    });
+    wrap.append(...buttons);
+    return wrap;
   }
 
   /* ---------- item menu ---------- */
@@ -477,7 +531,7 @@ export function mountGame(root, data, { seed = null } = {}) {
     let text = copy.text(monster);
     let buttons;
     if (res.outcome === 'win' && res.next === 'encounter') {
-      text += ` ${res.remaining} more ${res.remaining === 1 ? 'goblin steps' : 'goblins step'} forward.`;
+      text += ` ${res.remaining} more ${res.remaining === 1 ? `${monster} steps` : `${monster}s step`} forward.`;
       buttons = [['Next fight', beginEncounter]];
     } else if (res.outcome === 'win') {
       text += ` ${state.meta.node.label} is clear.`;
@@ -493,10 +547,24 @@ export function mountGame(root, data, { seed = null } = {}) {
       b.addEventListener('click', fn);
       return b;
     });
+
+    const xp = state.run.xpProgress();
+    const extras = [];
+    if (res.xpGained) extras.push(el('p', { className: 'xp-line' }, `+${res.xpGained} XP · ${xp.next ? `${xp.xp} / ${xp.next} to level ${xp.level + 1}` : `${xp.xp} XP, max level`}`));
+    if (res.levelUp) {
+      const u = res.levelUp;
+      extras.push(el('div', { className: 'level-banner', role: 'status' }, [
+        el('p', { className: 'level-banner-title display' }, `Level ${u.to}`),
+        el('p', { className: 'level-banner-text' }, `Max HP ${u.maxHp} (+${u.hpGain}) · Proficiency +${u.proficiency} · Damage bonus +${u.damageBonus}`)
+      ]));
+    }
+
     const dialog = el('div', { className: `outcome is-${enc.outcome}`, role: 'dialog', ariaModal: 'true', ariaLabelledby: 'outcome-title' }, [
+      ...(res.levelUp ? [extras.pop()] : []),
       el('h2', { className: 'display outcome-title', id: 'outcome-title' }, copy.title),
       el('p', { className: 'outcome-text' }, text),
-      statList([['Rounds', enc.round], ['HP left', `${enc.player.hp} / ${enc.player.maxHp}`], ['Draughts', pack]]),
+      ...extras,
+      statList([['Rounds', enc.round], ['HP left', `${state.run.hp} / ${state.run.player().maxHp}`], ['Draughts', pack]]),
       el('div', { className: 'outcome-buttons' }, btnEls)
     ]);
     trapTab(dialog, btnEls);
@@ -586,6 +654,29 @@ export function mountGame(root, data, { seed = null } = {}) {
 }
 
 /* =========================== Helpers =========================== */
+function loadSpeed(reduced) {
+  try {
+    const v = localStorage.getItem(SPEED_KEY);
+    if (v && v in SPEEDS) return v;
+  } catch { /* storage blocked: fall through */ }
+  return reduced ? 'off' : 'normal';
+}
+function saveSpeed(v) { try { localStorage.setItem(SPEED_KEY, v); } catch { /* ignore */ } }
+
+const ICONS = {
+  circling: 'M12.5 8a4.5 4.5 0 1 1-1.4-3.3M12.6 2.4v2.6H10',
+  wary: 'M8 2.2l4.8 1.9v3.6c0 2.9-2.2 4.9-4.8 5.9-2.6-1-4.8-3-4.8-5.9V4.1z',
+  braced: 'M2.5 13.5h11M5 13.5V5.5M11 13.5V5.5M3.5 5.5h9'
+};
+function icon(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', 'stance-icon');
+  svg.innerHTML = `<path d="${ICONS[name] || ''}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>`;
+  return svg;
+}
+
 function el(tag, props = {}, children) {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
