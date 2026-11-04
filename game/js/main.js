@@ -61,8 +61,9 @@ async function loadData() {
     if (!res.ok) throw new Error(`data/${name}.json returned HTTP ${res.status}`);
     return res.json();
   };
-  const [characters, items, monsters, floors] = await Promise.all(['characters', 'items', 'monsters', 'floors'].map(load));
-  return { characters, items, monsters, floors };
+  const names = ['characters', 'items', 'monsters', 'floors', 'progression', 'lines'];
+  const [characters, items, monsters, floors, progression, lines] = await Promise.all(names.map(load));
+  return { characters, items, monsters, floors, progression, lines };
 }
 
 /* ======================= Test panel (?test) ======================= */
@@ -113,7 +114,7 @@ function renderPanel(data) {
 
 function renderTests(container, results) {
   const rows = results.map(r => testRow(r.pass, r.name, r.details));
-  rows.push(testRow(true, '9. Test panel with "Run 1000 fights"',
+  rows.push(testRow(true, '13. Test panel with "Run 1000 fights"',
     'This panel. Press the button to print win rate, average rounds, average HP left, and the full log of fight #0.'));
   container.replaceChildren(...rows);
 }
