@@ -6,6 +6,20 @@ export const abilityMod = score => Math.floor((score - 10) / 2);
 /** +2 at levels 1-4, +3 at 5-8, ... */
 export const proficiencyBonus = level => 2 + Math.floor((Math.max(1, level) - 1) / 4);
 
+/** Max HP = 8 + Con mod + 4 per level after 1 (minimum 1). */
+export const maxHpFor = (conMod, level, perLevel = 4) => Math.max(1, 8 + conMod + perLevel * (Math.max(1, level) - 1));
+
+/** Flat damage bonus added to every hit: floor((level - 1) / 2). */
+export const damageBonus = level => Math.floor((Math.max(1, level) - 1) / 2);
+
+/** Level reached with this much XP. thresholds[i] = total XP needed for level i + 1. */
+export function levelForXp(xp, progression) {
+  const t = progression.xpThresholds;
+  let level = 1;
+  for (let i = 1; i < t.length && i < progression.maxLevel; i++) if (xp >= t[i]) level = i + 1;
+  return level;
+}
+
 /** armor: { base, dexCap } — dexCap null means no cap */
 export function armorClass(armor, dexMod) {
   const cap = armor.dexCap == null ? Infinity : armor.dexCap;
