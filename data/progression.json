@@ -1,0 +1,6 @@
+{
+  "maxLevel": 8,
+  "xpThresholds": [0, 75, 200, 400, 650, 950, 1300, 1700],
+  "hpPerLevel": 4,
+  "notes": "xpThresholds[i] is the total XP needed to reach level i + 1. Proficiency and damage bonus formulas live in rules.js."
+}
