@@ -1,0 +1,129 @@
+{
+  "events": {
+    "playerHit": {
+      "speaker": "monster",
+      "lines": [
+        "Ow! That was my good ear!",
+        "Rude. Effective, but rude.",
+        "I felt that one in my lunch.",
+        "Hey! I was standing there!",
+        "That's going to leave a story."
+      ]
+    },
+    "playerMiss": {
+      "speaker": "player",
+      "lines": [
+        "I meant to hit the wall. It had it coming.",
+        "Warm-up swing. Obviously.",
+        "The air is now very well cut.",
+        "That would have been incredible.",
+        "Fine. The {monster} gets one."
+      ]
+    },
+    "crit": {
+      "speaker": "monster",
+      "lines": [
+        "Okay. Okay. That one was good.",
+        "Something in me just resigned.",
+        "I'd like to file a complaint.",
+        "I saw my whole life. It was mostly caves.",
+        "Was that legal? That didn't feel legal."
+      ]
+    },
+    "goblinHit": {
+      "speaker": "monster",
+      "lines": [
+        "Got you! Write that down!",
+        "Ha! Stabbed it!",
+        "That's for the cave tax.",
+        "Mine now. Mostly the blood.",
+        "Did that hurt? Say it hurt."
+      ]
+    },
+    "goblinMiss": {
+      "speaker": "monster",
+      "lines": [
+        "Stand still, I'm aiming!",
+        "Practice swing. Totally practice.",
+        "The rock moved. Not my fault.",
+        "Next one, for real.",
+        "I was told this would be easier."
+      ]
+    },
+    "dodge": {
+      "speaker": "monster",
+      "lines": [
+        "*The {monster} hops sideways, grinning like it planned this.",
+        "Duck, weave, mostly duck.",
+        "Not today, tall thing.",
+        "I am made of elbows and caution.",
+        "Too slow! Probably!"
+      ]
+    },
+    "block": {
+      "speaker": "monster",
+      "lines": [
+        "Where do you think you're going?",
+        "Exit's closed. Management.",
+        "Nobody leaves before the fun.",
+        "Door's this way. Through me.",
+        "Sit back down."
+      ]
+    },
+    "lowHp": {
+      "speaker": "self",
+      "lines": [
+        "Just a scratch. Several scratches.",
+        "I'd like to pause this, please.",
+        "Everything is fine and also bleeding.",
+        "I've had worse. I think. Can't remember.",
+        "Is it cold in here, or is it me?"
+      ]
+    },
+    "defeat": {
+      "speaker": "loser",
+      "lines": [
+        "Tell the others I was tall.",
+        "I'll just lie here and reflect.",
+        "This is fine. Lying down is fine.",
+        "Remember me as undefeated, mostly.",
+        "I regret everything. Mostly the cave."
+      ]
+    },
+    "fleeSuccess": {
+      "speaker": "player",
+      "lines": [
+        "Tactical retreat! Very tactical!",
+        "I'll be back. Much later.",
+        "Running is a kind of strategy.",
+        "Goodbye forever, or until floor two.",
+        "Legs, do the thing!"
+      ]
+    },
+    "fleeFailed": {
+      "speaker": "monster",
+      "lines": [
+        "Nope. Stay.",
+        "Leaving so soon? We just met.",
+        "Not that way. Or any way.",
+        "Sit. Good. Now, where were we?",
+        "The tunnel says no."
+      ]
+    }
+  },
+  "stances": {
+    "circling": {
+      "label": "Circling",
+      "line": "It circles you, looking for an opening. Likely to counter."
+    },
+    "wary": {
+      "label": "Wary",
+      "line": "It keeps its distance. Likely to dodge."
+    },
+    "braced": {
+      "label": "Braced",
+      "line": "Feet planted. If you run, it will try to block you."
+    }
+  },
+  "notes": "Lines starting with * are narration and show as an italic caption instead of speech. {player} and {monster} are filled in. speaker: player, monster, self (whoever is low on HP), loser (whoever was defeated)."
+}
