@@ -5,7 +5,7 @@ import { createEncounter } from './combat.js';
 import { generateFloor, getFloorDef, neighbors } from './floor.js';
 import { openChest as rollChest } from './chest.js';
 import { createRng } from './rng.js';
-import { abilityCheck, healAmount } from './rules.js';
+import { abilityCheck, healAmount, levelForXp, proficiencyBonus, damageBonus } from './rules.js';
 
 const clone = o => JSON.parse(JSON.stringify(o));
 
@@ -13,6 +13,8 @@ export function createRun(data, { characterId, runSeed, floorNumber = 1 }) {
   const basePreset = data.characters[characterId];
   if (!basePreset) throw new Error(`Unknown character "${characterId}"`);
   const preset = clone(basePreset);
+  preset.level = preset.level ?? 1;
+  const progression = data.progression || { maxLevel: 1, xpThresholds: [0] };
   const floor = generateFloor(runSeed, floorNumber, data.floors);
   const def = getFloorDef(data.floors, floorNumber);
   const byId = Object.fromEntries(floor.nodes.map(n => [n.id, n]));
@@ -21,7 +23,7 @@ export function createRun(data, { characterId, runSeed, floorNumber = 1 }) {
 
   const run = {
     runSeed, characterId, floorNumber, floor, def, preset,
-    hp: start.maxHp, gold: 0,
+    hp: start.maxHp, gold: 0, xp: 0, level: preset.level, progression,
     inventory: { ...(preset.inventory || {}) },    // { itemId: count }
     position: floor.entrance, previous: null,
     visited: new Set([floor.entrance]),
@@ -36,7 +38,7 @@ export function createRun(data, { characterId, runSeed, floorNumber = 1 }) {
     node: id => byId[id],
     player, moves, canMoveTo, moveTo, remaining, isResolved,
     startEncounter, finishEncounter,
-    canDrink, drinkDraught, canOpenChest, openChest, canDescend, descend, describe
+    canDrink, drinkDraught, canOpenChest, openChest, canDescend, descend, describe, xpProgress
   };
 
   say(`${start.name} enters ${def.name.toLowerCase()}. ${def.intro || ''}`.trim());
@@ -134,13 +136,15 @@ export function createRun(data, { characterId, runSeed, floorNumber = 1 }) {
 
     if (outcome === 'win') {
       run.defeated[node.id] = (run.defeated[node.id] || 0) + 1;
+      const xpGained = enc.monster.xp || 0;
+      const levelUp = gainXp(xpGained);
       const left = remaining(node.id);
-      if (left > 0) return { outcome, next: 'encounter', remaining: left };
+      if (left > 0) return { outcome, next: 'encounter', remaining: left, xpGained, levelUp };
       run.status = 'exploring';
       run.pending = null;
       run.cleared.add(node.id);
       say(`${node.label} is clear.`);
-      return { outcome, next: 'map' };
+      return { outcome, next: 'map', xpGained, levelUp };
     }
     if (outcome === 'defeat') {
       run.status = 'defeat';
@@ -153,6 +157,27 @@ export function createRun(data, { characterId, runSeed, floorNumber = 1 }) {
     run.position = run.previous ?? floor.entrance;
     say(`You fall back to the ${byId[run.position].label.toLowerCase()}.`);
     return { outcome, next: 'map' };
+  }
+
+  /* ---------------- XP and levels ---------------- */
+  function gainXp(amount) {
+    if (!amount) return null;
+    run.xp += amount;
+    const before = run.level;
+    const after = levelForXp(run.xp, progression);
+    if (after <= before) return null;
+    const oldMax = player().maxHp;
+    run.level = run.preset.level = after;
+    const p = player();
+    const hpGain = p.maxHp - oldMax;
+    run.hp = Math.min(p.maxHp, run.hp + hpGain);   // the new max HP is added to current HP; no full heal
+    say(`Level up! ${p.name} reaches level ${after}. Max HP ${p.maxHp} (+${hpGain}).`);
+    return { from: before, to: after, hpGain, maxHp: p.maxHp, proficiency: proficiencyBonus(after), damageBonus: damageBonus(after) };
+  }
+  function xpProgress() {
+    const t = progression.xpThresholds;
+    const atMax = run.level >= progression.maxLevel || run.level >= t.length;
+    return { xp: run.xp, level: run.level, floor: t[run.level - 1] ?? 0, next: atMax ? null : t[run.level] };
   }
 
   /* ---------------- healing on the map ---------------- */
