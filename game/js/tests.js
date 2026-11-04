@@ -8,6 +8,8 @@ import { createCharacter, createMonster } from './entity.js';
 import { createEncounter, runEncounter, OUTCOMES, POLICIES, ROUND_LIMIT } from './combat.js';
 import { generateFloor, getFloorDef, findPath, neighbors, ROUTE_TYPES } from './floor.js';
 import { openChest } from './chest.js';
+import { buildBeats, createLinePicker, schedule, SPEEDS } from './beats.js';
+import { telegraph, preferredResponses } from './ai.js';
 
 const pct = x => `${(x * 100).toFixed(2)}%`;
 
@@ -250,6 +252,107 @@ export function runAcceptanceTests(data, { seed = 1 } = {}) {
           `${failed} failed disarms, damage always 1-6. Gear in ${gear}, save tokens in ${tokens} (target about 5%).`);
   }
 
+  // 9. Balance: Scout level 1 vs Goblin
+  {
+    const b = runBatch(data, { characterId: 'scout', monsterId: 'goblin', n: 1000, seed: `${seed}:balance`, policy: 'light' });
+    const ok = b.avgRounds >= 3 && b.avgRounds <= 6 && b.winRate >= 0.6 && b.winRate <= 0.75;
+    add('9. Scout (level 1) vs Goblin: 3-6 rounds, 60-75% wins (1000 fights)', ok,
+      `Win rate ${pct(b.winRate)}, average ${b.avgRounds.toFixed(2)} rounds, average HP left ${b.avgHp.toFixed(2)}/${b.maxHp}. ` +
+      `Goblin: ${data.monsters.goblin.hp} HP, AC ${data.monsters.goblin.ac}, +${data.monsters.goblin.attack.bonus}, ${data.monsters.goblin.attack.damage}.`);
+  }
+
+  // 10. Lines: every event type has at least 5 lines
+  if (data.lines) {
+    const required = ['playerHit', 'playerMiss', 'crit', 'goblinHit', 'goblinMiss', 'dodge', 'block', 'lowHp', 'defeat', 'fleeSuccess', 'fleeFailed'];
+    const counts = required.map(k => [k, data.lines.events?.[k]?.lines?.length || 0]);
+    const short = counts.filter(([, n]) => n < 5);
+    const p1 = createLinePicker(data.lines, `${seed}:lp`), p2 = createLinePicker(data.lines, `${seed}:lp`);
+    const same = required.every(k => p1(k).text === p2(k).text);
+    add('10. Every event type has at least 5 lines; picks are seeded', short.length === 0 && same,
+      short.length ? `Too few: ${short.map(([k, n]) => `${k} (${n})`).join(', ')}`
+        : `${counts.map(([k, n]) => `${k} ${n}`).join(', ')}. Same seed picks the same lines: ${same}.`);
+  }
+
+  // 11. Beats: in resolution order, never overlapping, telegraph matches the AI preference
+  {
+    const problems = [];
+    let rounds = 0, beatsSeen = 0;
+    const scout = createCharacter(data.characters.scout, data.items);
+    const goblin = createMonster(data.monsters.goblin);
+    for (let i = 0; i < 300 && problems.length < 5; i++) {
+      const enc = createEncounter(scout, goblin, `${seed}:beats:${i}`);
+      const pick = data.lines ? createLinePicker(data.lines, `${seed}:beats:${i}`) : null;
+      const flags = {};
+      const policyRng = createRng(`${seed}:beat-policy:${i}`);
+      while (!enc.outcome) {
+        const tell = telegraph(enc.monster);
+        const pref = preferredResponses(enc.monster);
+        if ((tell.stance === 'circling') !== (pref.vsAttack[0] === 'counter')) problems.push(`fight ${i}: stance does not match preference`);
+        const before = { p: enc.player.hp, m: enc.monster.hp };
+        const action = POLICIES.mixed(enc, policyRng);
+        const result = enc.act(action);
+        const beats = buildBeats(result, { enc, before, pick, flags });
+        rounds++; beatsSeen += beats.length;
+
+        if (beats[0].kind !== 'declare') problems.push(`fight ${i} round ${result.round}: does not start with the declaration`);
+        const last = beats[beats.length - 1];
+        if (last.kind !== (result.outcome ? 'outcome' : 'status')) problems.push(`fight ${i} round ${result.round}: does not end with a status or outcome`);
+        if (last.hp.p !== enc.player.hp || last.hp.m !== enc.monster.hp) problems.push(`fight ${i} round ${result.round}: final HP differs from the engine`);
+
+        // order: each engine attack/flee event appears as a roll beat, in the same order
+        const evActors = result.events.filter(e => e.type === 'attack' || e.type === 'flee').map(e => e.type === 'flee' ? 'player' : e.by);
+        const rollActors = beats.filter(b => b.kind === 'roll').map(b => b.actor);
+        if (evActors.join() !== rollActors.join()) problems.push(`fight ${i} round ${result.round}: roll order ${rollActors} vs events ${evActors}`);
+        // every roll is followed by its result
+        beats.forEach((b, j) => { if (b.kind === 'roll' && beats[j + 1]?.kind !== 'result') problems.push(`fight ${i}: roll not followed by result`); });
+        // a dodge is announced before the roll it affects
+        if (result.response === 'dodge') {
+          const d = beats.findIndex(b => b.kind === 'reaction'), r = beats.findIndex(b => b.kind === 'roll');
+          if (r !== -1 && d > r) problems.push(`fight ${i}: dodge shown after the roll`);
+        }
+        // schedule never overlaps at any speed
+        for (const ms of Object.values(SPEEDS)) {
+          const timed = schedule(beats, ms);
+          for (let j = 1; j < timed.length; j++) {
+            if (timed[j].start < timed[j - 1].start + timed[j - 1].duration) problems.push(`fight ${i}: beats overlap at ${ms}ms`);
+          }
+        }
+      }
+    }
+    add('11. Beats play in resolution order with no overlap; stance matches the AI', problems.length === 0,
+      problems.length ? problems.slice(0, 5).join('; ')
+        : `${rounds} rounds, ${beatsSeen} beats checked. Declaration first, status or outcome last, rolls in engine order, ` +
+          `each roll followed by its result, dodges announced before the roll, no overlap at 700, 280 or 0 ms.`);
+  }
+
+  // 12. Level scaling formulas and XP thresholds
+  {
+    const problems = [];
+    const expectHp = (con, lvl) => Math.max(1, 8 + con + 4 * (lvl - 1));
+    for (const id of Object.keys(data.characters)) {
+      for (let lvl = 1; lvl <= 8; lvl++) {
+        const c = createCharacter({ ...data.characters[id], level: lvl }, data.items);
+        const prof = lvl <= 4 ? 2 : 3;
+        const dmg = Math.floor((lvl - 1) / 2);
+        if (c.maxHp !== expectHp(c.mods.con, lvl)) problems.push(`${id} L${lvl}: HP ${c.maxHp}`);
+        if (c.attack.bonus !== c.mods[c.attack.ability] + prof) problems.push(`${id} L${lvl}: attack ${c.attack.bonus}`);
+        if (c.attack.modifier !== c.mods[c.attack.ability] + dmg) problems.push(`${id} L${lvl}: damage mod ${c.attack.modifier}`);
+      }
+    }
+    if (data.progression) {
+      const t = data.progression.xpThresholds;
+      t.forEach((x, i) => { if (i < data.progression.maxLevel && rules.levelForXp(x, data.progression) !== i + 1) problems.push(`XP ${x} should be level ${i + 1}`); });
+      if (rules.levelForXp(t[1] - 1, data.progression) !== 1) problems.push('one XP short of level 2 should stay level 1');
+    }
+    const xpTable = { goblin: 25, 'gilded-goblin': 75, 'mire-crawler': 50, 'stone-warden': 100, 'hollow-brute': 300 };
+    for (const [id, xp] of Object.entries(xpTable)) if (data.monsters[id]?.xp !== xp) problems.push(`${id} XP ${data.monsters[id]?.xp}`);
+    const swarmXp = (data.monsters['cave-rat']?.xp || 0) * 3;
+    if (swarmXp !== 15) problems.push(`rat swarm XP ${swarmXp}`);
+    add('12. Level formulas (HP, proficiency, damage bonus) and XP values', problems.length === 0,
+      problems.length ? problems.slice(0, 5).join('; ')
+        : 'Levels 1-8 checked for both presets. Scout HP 9/13/17..., proficiency +2 (1-4) and +3 (5-8), damage bonus floor((level-1)/2). XP: goblin 25, rat swarm 15, gilded goblin 75, mire crawler 50, stone warden 100, hollow brute 300.');
+  }
+
   return results;
 }
 
@@ -258,7 +361,7 @@ if (typeof window === 'undefined' && typeof process !== 'undefined' && process.a
     import.meta.url.endsWith('/' + process.argv[1].split(/[\\/]/).pop())) {
   const { readFileSync } = await import('node:fs');
   const load = n => JSON.parse(readFileSync(new URL(`../data/${n}.json`, import.meta.url), 'utf8'));
-  const data = { characters: load('characters'), items: load('items'), monsters: load('monsters'), floors: load('floors') };
+  const data = Object.fromEntries(['characters', 'items', 'monsters', 'floors', 'progression', 'lines'].map(n => [n, load(n)]));
   const seed = process.argv[2] ?? '1';
   const results = runAcceptanceTests(data, { seed });
   for (const r of results) console.log(`${r.pass ? 'PASS' : 'FAIL'}  ${r.name}\n      ${r.details}`);
