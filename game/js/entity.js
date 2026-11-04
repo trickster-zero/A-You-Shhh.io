@@ -1,5 +1,5 @@
 // Builds combatants from JSON stat blocks. Output is plain data, safe to clone.
-import { abilityMod, armorClass, proficiencyBonus } from './rules.js';
+import { abilityMod, armorClass, proficiencyBonus, maxHpFor, damageBonus } from './rules.js';
 import { parseDice } from './dice.js';
 
 const ABILITIES = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
@@ -19,7 +19,8 @@ export function createCharacter(preset, items) {
   // Finesse uses the better of Str and Dex; otherwise the weapon's listed ability.
   const ability = weapon.finesse ? (mods.dex >= mods.str ? 'dex' : 'str') : (weapon.ability || 'str');
   const proficient = (preset.proficiencies || []).includes(weapon.id);
-  const maxHp = Math.max(1, 8 + mods.con);
+  const maxHp = maxHpFor(mods.con, level, preset.hpPerLevel ?? 4);
+  const dmgBonus = damageBonus(level);
 
   // Inventory: { itemId: count } resolved against items.consumables
   const inventory = {};
@@ -40,7 +41,8 @@ export function createCharacter(preset, items) {
       ability, proficient,
       bonus: mods[ability] + (proficient ? proficiencyBonus(level) : 0),
       dice: weapon.damage,
-      modifier: mods[ability]
+      modifier: mods[ability] + dmgBonus,   // ability mod + level damage bonus, added to every hit
+      levelBonus: dmgBonus
     },
     inventory
   };
@@ -56,7 +58,7 @@ export function createMonster(block) {
   const dmg = parseDice(block.attack.damage);
 
   return {
-    id: block.id, name: block.name, kind: 'monster',
+    id: block.id, name: block.name, kind: 'monster', xp: block.xp ?? 0,
     mods,
     ac: block.ac,
     maxHp: block.hp, hp: block.hp,
