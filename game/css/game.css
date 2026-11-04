@@ -313,6 +313,85 @@ a:hover { text-decoration: underline; }
   .map-log { max-height: 180px; }
 }
 
+/* ---------- Combat feel: speed, stance, bubbles, beats ---------- */
+.head-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.speed { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: rgba(10, 14, 19, 0.6); }
+.speed-label { font-size: 0.72rem; color: var(--muted); padding: 0 8px 0 6px; }
+.speed-btn {
+  min-height: 32px; padding: 4px 12px; border: 0; border-radius: 999px; cursor: pointer;
+  background: none; color: var(--muted); font: inherit; font-size: 0.78rem;
+}
+.speed-btn:hover { color: var(--ink); }
+.speed-btn[aria-checked="true"] { background: var(--wood); color: var(--night); font-weight: 500; }
+
+.arena { padding-top: 58px; }
+.fighter-wrap { position: relative; display: flex; flex-direction: column; }
+.fighter-wrap .fighter { flex: 1; }
+.bubble {
+  position: absolute; left: 14px; right: 14px; bottom: calc(100% + 10px); z-index: 3;
+  width: max-content; max-width: calc(100% - 28px);
+  padding: 8px 13px; border-radius: 12px;
+  background: #f2ead9; color: #1a1712;
+  font-family: var(--display); font-size: 1.05rem; line-height: 1.25; font-weight: 600;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+  opacity: 0; transform: translateY(6px) scale(0.96); transform-origin: 24px 100%;
+  transition: opacity 0.2s ease, transform 0.25s cubic-bezier(0.2, 0.8, 0.3, 1.2);
+  pointer-events: none;
+}
+.bubble::after {
+  content: ""; position: absolute; left: 20px; top: 100%;
+  border: 8px solid transparent; border-top-color: #f2ead9; border-bottom: 0;
+}
+.bubble-monster { left: auto; right: 14px; transform-origin: calc(100% - 24px) 100%; }
+.bubble-monster::after { left: auto; right: 20px; }
+.bubble.show { opacity: 1; transform: none; }
+.bubble.is-narrate { background: rgba(17, 24, 32, 0.96); color: var(--ink); font-style: italic; font-weight: 400; border: 1px solid var(--line); }
+.bubble.is-narrate::after { border-top-color: rgba(17, 24, 32, 0.96); }
+
+.fighter.is-rolling { animation: rolling 0.45s ease; }
+@keyframes rolling { 40% { box-shadow: inset 0 0 0 1px var(--wood), 0 0 22px rgba(232, 176, 75, 0.18); } }
+.float.is-crit { font-size: 2.4rem; color: var(--ember); text-shadow: 0 0 14px rgba(232, 176, 75, 0.7); }
+
+.stance { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.stance-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.stance-chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 7px;
+  border: 1px solid var(--line); border-radius: 999px; font-size: 0.78rem; color: var(--ink);
+}
+.stance-icon { width: 15px; height: 15px; flex: none; }
+.stance-chip.is-circling { border-color: rgba(194, 86, 63, 0.6); color: #f0b8aa; }
+.stance-chip.is-wary { border-color: rgba(143, 211, 255, 0.5); color: var(--glow); }
+.stance-chip.is-braced { border-color: rgba(201, 165, 122, 0.5); color: var(--wood); font-size: 0.72rem; }
+.stance-line { margin-top: 6px; font-size: 0.8rem; color: var(--muted); line-height: 1.45; }
+
+.log-rounds { list-style: none; }
+.log-round + .log-round { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.log-round-title { font-family: var(--display); font-size: 1.05rem; color: var(--wood); margin-bottom: 2px; }
+.log-beats { list-style: none; }
+.log-beats .log-line { animation: beatIn 0.25s ease; }
+@keyframes beatIn { from { opacity: 0; transform: translateX(-4px); } }
+.log-line.is-declare { color: var(--ink); font-weight: 400; }
+.log-line.is-reaction { color: #d9c7a8; }
+.log-line.is-roll { color: #aab2bc; font-variant-numeric: tabular-nums; }
+.log-line.is-status { color: var(--muted); font-size: 0.82rem; }
+.log-line.tone-hit { border-left-color: rgba(143, 211, 255, 0.55); }
+.log-line.tone-hurt { border-left-color: rgba(194, 86, 63, 0.7); }
+.log-line.tone-crit { border-left-color: var(--ember); color: var(--ember); }
+.log-line.tone-miss { color: var(--muted); }
+.log-line.tone-good { border-left-color: var(--ok); color: #b9dcc8; }
+
+.level-banner {
+  margin: -6px -6px 18px; padding: 12px 14px;
+  border: 1px solid var(--ember); border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(232, 176, 75, 0.16), rgba(232, 176, 75, 0.04));
+  animation: bannerIn 0.6s cubic-bezier(0.2, 0.8, 0.3, 1.2);
+}
+@keyframes bannerIn { from { transform: scale(0.92); opacity: 0; } }
+.level-banner-title { font-size: 1.9rem; line-height: 1; color: var(--ember); text-shadow: 0 0 18px rgba(232, 176, 75, 0.4); }
+.level-banner-title::before { content: "Level up · "; font-size: 1.1rem; color: var(--wood); }
+.level-banner-text { margin-top: 4px; font-size: 0.85rem; color: var(--ink); }
+.xp-line { margin-top: 10px; font-size: 0.85rem; color: var(--wood); }
+
 /* ---------- Narrow screens ---------- */
 @media (max-width: 640px) {
   .screen { padding: 16px 14px 20px; }
@@ -326,6 +405,11 @@ a:hover { text-decoration: underline; }
   .action-hint { display: none; }
   .action-label { font-size: 1.15rem; }
   .log-list { max-height: 30vh; font-size: 0.82rem; }
+  .arena { padding-top: 64px; }
+  .bubble { left: 6px; right: 6px; max-width: calc(100% - 12px); font-size: 0.92rem; padding: 7px 10px; }
+  .bubble-monster { right: 6px; }
+  .stance-line { display: none; }
+  .head-right { width: 100%; justify-content: space-between; }
   .encounter-screen .action-dock { position: sticky; bottom: 0; padding: 8px 0 calc(6px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(transparent, var(--night) 30%); }
 }
 
