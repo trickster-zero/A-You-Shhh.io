@@ -1,11 +1,40 @@
 {
   "goblin": {
-    "id": "goblin",
-    "name": "Goblin",
-    "ac": 13,
-    "hp": 7,
+    "id": "goblin", "name": "Goblin", "xp": 25,
+    "ac": 13, "hp": 12,
     "mods": { "str": -1, "dex": 2, "con": 0 },
-    "attack": { "name": "Scimitar", "bonus": 4, "damage": "1d6+2" }
+    "attack": { "name": "Scimitar", "bonus": 4, "damage": "1d6+1" }
+  },
+  "cave-rat": {
+    "id": "cave-rat", "name": "Cave rat", "xp": 5, "group": "Rat swarm (3 rats, 15 XP)",
+    "ac": 11, "hp": 6,
+    "mods": { "str": -2, "dex": 2, "con": 0 },
+    "attack": { "name": "Bite", "bonus": 3, "damage": "1d4" }
+  },
+  "gilded-goblin": {
+    "id": "gilded-goblin", "name": "Gilded Goblin", "xp": 75, "rare": true,
+    "ac": 15, "hp": 14,
+    "mods": { "str": 0, "dex": 3, "con": 1 },
+    "attack": { "name": "Gilded knife", "bonus": 5, "damage": "1d6+2" },
+    "ai": { "lowHpThreshold": 1 }
+  },
+  "mire-crawler": {
+    "id": "mire-crawler", "name": "Mire Crawler", "xp": 50,
+    "ac": 14, "hp": 18,
+    "mods": { "str": 1, "dex": 4, "con": 1 },
+    "attack": { "name": "Barbed limb", "bonus": 5, "damage": "1d8+1" },
+    "ai": { "lowHpThreshold": 0.6 }
+  },
+  "stone-warden": {
+    "id": "stone-warden", "name": "Stone Warden", "xp": 100,
+    "ac": 16, "hp": 30,
+    "mods": { "str": 3, "dex": -1, "con": 3 },
+    "attack": { "name": "Granite fist", "bonus": 5, "damage": "1d10+2" }
+  },
+  "hollow-brute": {
+    "id": "hollow-brute", "name": "Hollow Brute", "xp": 300, "boss": true,
+    "ac": 15, "hp": 45,
+    "mods": { "str": 4, "dex": 0, "con": 4 },
+    "attack": { "name": "Hollow maul", "bonus": 6, "damage": "2d8+3" }
   }
 }
-
