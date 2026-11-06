@@ -33,7 +33,7 @@ const OUTCOME_COPY = {
 
 const ARROWS = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
 
-export function mountGame(root, data, { seed = null } = {}) {
+export function mountGame(root, data, { seed = null, view = null } = {}) {
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const state = {
     screen: 'start',
@@ -41,7 +41,10 @@ export function mountGame(root, data, { seed = null } = {}) {
     run: null, enc: null, meta: null,
     busy: false, menuOpen: false, runs: 0,
     speed: loadSpeed(reduceMotion.matches),
-    ui: {}, map: null
+    ui: {}, map: null,
+    mode: '2d',                       // '2d' map or 'cave' (3D)
+    prefer3d: view !== '2d',
+    cave: null, caveUi: null, caveFailed: false
   };
 
   document.addEventListener('keydown', onKey);
@@ -49,6 +52,7 @@ export function mountGame(root, data, { seed = null } = {}) {
 
   /* =========================== Start =========================== */
   function showStart() {
+    destroyCave();
     state.screen = 'start';
     state.run = null;
     const floorDef = getFloorDef(data.floors, 1);
@@ -92,13 +96,19 @@ export function mountGame(root, data, { seed = null } = {}) {
   }
 
   function startRun() {
+    destroyCave();
     state.run = createRun(data, { characterId: state.characterId, runSeed: nextSeed() });
-    showMap();
+    if (state.prefer3d && canUse3d()) showCave();
+    else showMap();
   }
+
+  function canUse3d() { return !state.caveFailed && hasWebGL(); }
 
   /* =========================== Floor map =========================== */
   function showMap() {
     const { run } = state;
+    state.cave?.pause();
+    state.mode = '2d';
     state.screen = 'map';
     state.busy = false;
     const ui = state.ui = {};
@@ -117,7 +127,10 @@ export function mountGame(root, data, { seed = null } = {}) {
       el('header', { className: 'enc-head' }, [
         backLink(),
         el('h1', { className: 'display title' }, `Floor ${run.floorNumber} · ${run.def.name}`),
-        el('p', { className: 'round-count' }, `Seed ${run.runSeed}`)
+        el('div', { className: 'head-right' }, [
+          ...(canUse3d() ? [viewButton('3D view (M)', showCave)] : []),
+          el('p', { className: 'round-count' }, `Seed ${run.runSeed}`)
+        ])
       ]),
       el('div', { className: 'map-layout' }, [
         el('div', { className: 'map-col' }, [
@@ -143,8 +156,15 @@ export function mountGame(root, data, { seed = null } = {}) {
   }
 
   function refreshMap() {
-    const { run, ui } = state;
     state.map.update();
+    fillSide(state.ui);
+  }
+
+  function refreshExplore() { if (state.mode === 'cave') refreshCave(); else refreshMap(); }
+
+  /** Status card, "you are at", context button, drink button, and new log lines. Shared by the 2D map and the 3D HUD. */
+  function fillSide(ui) {
+    const { run } = state;
 
     // new log lines since last refresh
     for (let i = ui.logCount; i < run.log.length; i++) appendLog(ui.log, run.log[i], classify(run.log[i]));
@@ -180,8 +200,10 @@ export function mountGame(root, data, { seed = null } = {}) {
     );
 
     ui.drink.disabled = !run.canDrink() || state.busy;
-    if (run.canOpenChest()) { ui.context.hidden = false; ui.context.textContent = 'Open chest (Enter)'; }
-    else if (run.canDescend()) { ui.context.hidden = false; ui.context.textContent = 'Descend (Enter)'; }
+    const near = state.mode !== 'cave' || !!state.cave?.nearChest();
+    const key = state.mode === 'cave' ? 'E' : 'Enter';
+    if (run.canOpenChest() && near) { ui.context.hidden = false; ui.context.textContent = `Open chest (${key})`; }
+    else if (run.canDescend() && near) { ui.context.hidden = false; ui.context.textContent = `Descend (${key})`; }
     else ui.context.hidden = true;
     ui.context.disabled = state.busy;
   }
@@ -221,15 +243,20 @@ export function mountGame(root, data, { seed = null } = {}) {
   function drink() {
     if (!state.run.canDrink()) return;
     state.run.drinkDraught();
-    refreshMap();
+    refreshExplore();
   }
 
   function contextAction() {
     const { run } = state;
     if (state.busy) return;
+    if (state.mode === 'cave' && (run.canOpenChest() || run.canDescend()) && !state.cave?.nearChest()) {
+      toast('Get next to the chest first.');
+      return;
+    }
     if (run.canOpenChest()) {
       run.openChest();
-      refreshMap();
+      state.cave?.refresh();
+      refreshExplore();
       if (run.status === 'defeat') return setTimeout(() => showRunEnd('defeat'), reduceMotion.matches ? 0 : OUTCOME_DELAY);
       focusSoon(state.ui.context);
     } else if (run.canDescend()) {
@@ -250,6 +277,133 @@ export function mountGame(root, data, { seed = null } = {}) {
       if (score > bestScore) { bestScore = score; best = id; }
     }
     if (best) travel(best);
+  }
+
+  /* =========================== 3D cave =========================== */
+  async function showCave() {
+    const { run } = state;
+    state.mode = 'cave';
+    state.screen = 'cave';
+    state.busy = false;
+    const u = state.caveUi = {};
+
+    u.host = el('div', { className: 'cave-view' }, [el('p', { className: 'loading' }, 'Lighting the torches…')]);
+    u.overlay = el('div', { className: 'cave-overlay', hidden: true });
+    u.status = el('div', { className: 'status-card' });
+    u.here = el('div', { className: 'here-card' });
+    u.drink = el('button', { className: 'btn btn-quiet', type: 'button', ariaKeyShortcuts: 'h' }, 'Drink draught (H)');
+    u.drink.addEventListener('click', drink);
+    u.context = el('button', { className: 'btn btn-primary', type: 'button', hidden: true });
+    u.context.addEventListener('click', contextAction);
+    u.log = el('ol', { className: 'log-list map-log', ariaLive: 'polite', ariaRelevant: 'additions', ariaLabel: 'Exploration log' });
+    u.toast = el('p', { className: 'cave-toast', role: 'status' });
+    u.minimapBox = el('div', { className: 'minimap', ariaHidden: 'true' });
+    u.minimapBox.setAttribute('inert', '');
+    u.dpad = dpadEl();
+
+    root.replaceChildren(el('section', { className: 'cave-screen' }, [
+      u.host,
+      el('header', { className: 'cave-top' }, [
+        backLink(),
+        el('h1', { className: 'display cave-title' }, `Floor ${run.floorNumber} · ${run.def.name}`),
+        el('div', { className: 'cave-top-right' }, [viewButton('2D map (M)', showMap), el('span', { className: 'round-count' }, `Seed ${run.runSeed}`)])
+      ]),
+      el('aside', { className: 'cave-side' }, [
+        u.status, u.here,
+        el('div', { className: 'side-actions' }, [u.context, u.drink]),
+        el('section', { className: 'log-panel map-log-panel', ariaLabel: 'Exploration log' }, [u.log])
+      ]),
+      u.minimapBox, u.toast,
+      el('p', { className: 'cave-hint' }, 'WASD or arrow keys to move · E to interact · H to drink · M for the 2D map'),
+      u.dpad, u.overlay
+    ]));
+
+    u.minimap = createMapView(u.minimapBox, run, { onMove() {}, onPreview() {} });
+    u.marker = u.minimapBox.querySelector('.player-marker');
+    run.log.forEach(line => appendLog(u.log, line, classify(line)));
+    u.logCount = run.log.length;
+
+    if (!state.cave) {
+      try {
+        const mod = await import('./cave3d/main.js');
+        if (state.caveUi !== u) return;                        // switched away while loading
+        state.cave = mod.mountCave(u.host, { run, dpad: u.dpad, hooks: caveHooks() });
+      } catch (err) {
+        console.warn('3D view unavailable, using the 2D map.', err);
+        state.caveFailed = true;
+        return showMap();
+      }
+    } else {
+      state.cave.attach(u.host);
+    }
+    u.host.querySelector('.loading')?.remove();
+    if (window.RPG) window.RPG.cave = state.cave;
+    state.cave.syncToRun();
+    refreshCave();
+    if (state.screen === 'cave') state.cave.resume();
+  }
+
+  function caveHooks() {
+    return {
+      onEvent: ev => {
+        refreshCave();
+        if (ev.type === 'crevice' && !ev.success) toast("Too tight. You can't fit through.");
+      },
+      onEncounter: () => beginEncounter(),
+      onArrive: () => refreshCave(),
+      onBump: reason => { if (reason === 'blocked') toast('The crevice is too tight for you.'); },
+      onFrame: pos => { const m = state.caveUi?.marker; if (m) m.style.transform = `translate(${pos.x}px, ${pos.y}px)`; },
+      onInteract: () => contextAction()
+    };
+  }
+
+  function refreshCave() {
+    const u = state.caveUi;
+    if (!u || !state.run) return;
+    u.minimap.update();
+    fillSide(u);
+  }
+
+  /** Back to exploring after a fight: the 3D cave if we came from it, otherwise the 2D map. */
+  function explore(res) {
+    if (state.mode === 'cave' && state.cave && state.caveUi) {
+      state.screen = 'cave';
+      const u = state.caveUi;
+      u.overlay.hidden = true;
+      u.overlay.replaceChildren();
+      state.cave.afterFight(res || {});
+      refreshCave();
+      state.cave.resume();
+      document.activeElement?.blur?.();
+    } else {
+      showMap();
+    }
+  }
+
+  function destroyCave() {
+    state.cave?.destroy();
+    state.cave = null;
+    state.caveUi = null;
+    if (window.RPG) window.RPG.cave = null;
+  }
+
+  function toast(text) {
+    const t = state.caveUi?.toast;
+    if (!t) return;
+    t.textContent = text;
+    t.classList.remove('show');
+    void t.offsetWidth;
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  function encounterHost() {
+    if (state.mode === 'cave' && state.caveUi) {
+      state.caveUi.overlay.hidden = false;
+      return state.caveUi.overlay;
+    }
+    return root;
   }
 
   /* =========================== Encounter =========================== */
@@ -291,7 +445,7 @@ export function mountGame(root, data, { seed = null } = {}) {
     ui.menu = el('div', { className: 'item-menu', role: 'dialog', ariaLabel: 'Your pack', hidden: true });
     ui.overlay = el('div', { className: 'outcome-overlay', hidden: true });
 
-    root.replaceChildren(el('section', { className: 'screen encounter-screen' }, [
+    encounterHost().replaceChildren(el('section', { className: 'screen encounter-screen' }, [
       el('header', { className: 'enc-head' }, [
         backLink(),
         el('h1', { className: 'display title' }, meta.node.label),
@@ -535,11 +689,11 @@ export function mountGame(root, data, { seed = null } = {}) {
       buttons = [['Next fight', beginEncounter]];
     } else if (res.outcome === 'win') {
       text += ` ${state.meta.node.label} is clear.`;
-      buttons = [['Continue', showMap]];
+      buttons = [['Continue', () => explore(res)]];
     } else if (res.outcome === 'defeat') {
       buttons = [['New run', startRun], ['Change fighter', showStart]];
     } else {
-      buttons = [['Back to the map', showMap]];
+      buttons = [[state.mode === 'cave' ? 'Back to the cave' : 'Back to the map', () => explore(res)]];
     }
 
     const btnEls = buttons.map(([label, fn], i) => {
@@ -576,6 +730,7 @@ export function mountGame(root, data, { seed = null } = {}) {
   /* =========================== Run end =========================== */
   function showRunEnd(kind) {
     const { run } = state;
+    destroyCave();
     state.screen = 'end';
     const p = run.player();
     const won = kind === 'complete';
@@ -622,7 +777,15 @@ export function mountGame(root, data, { seed = null } = {}) {
       return;
     }
 
+    if (state.screen === 'cave') {
+      if (e.key === 'h' || e.key === 'H') { e.preventDefault(); drink(); return; }
+      if (e.key === 'm' || e.key === 'M') { e.preventDefault(); showMap(); return; }
+      if ((e.key === 'e' || e.key === 'E' || e.key === 'Enter') && !e.target.matches?.('button, a')) { e.preventDefault(); contextAction(); }
+      return;
+    }
+
     if (state.screen === 'map') {
+      if ((e.key === 'm' || e.key === 'M') && canUse3d()) { e.preventDefault(); showCave(); return; }
       if (ARROWS[e.key]) { e.preventDefault(); moveByArrow(...ARROWS[e.key]); return; }
       if (e.key === 'h' || e.key === 'H') { e.preventDefault(); drink(); return; }
       if (e.key === 'Enter' && !e.target.matches?.('button, a, .node')) {
@@ -654,6 +817,26 @@ export function mountGame(root, data, { seed = null } = {}) {
 }
 
 /* =========================== Helpers =========================== */
+function hasWebGL() {
+  try {
+    const c = document.createElement('canvas');
+    return !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl')));
+  } catch { return false; }
+}
+
+function viewButton(label, fn) {
+  const b = el('button', { className: 'btn btn-quiet btn-small', type: 'button' }, label);
+  b.addEventListener('click', fn);
+  return b;
+}
+
+function dpadEl() {
+  const btn = (dir, label, glyph) => el('button', { className: `dpad-btn dpad-${dir}`, type: 'button', 'data-dir': dir, ariaLabel: label }, glyph);
+  return el('div', { className: 'dpad', role: 'group', ariaLabel: 'Move' }, [
+    btn('up', 'Move forward', '▲'), btn('left', 'Move left', '◀'), btn('right', 'Move right', '▶'), btn('down', 'Move back', '▼')
+  ]);
+}
+
 function loadSpeed(reduced) {
   try {
     const v = localStorage.getItem(SPEED_KEY);
