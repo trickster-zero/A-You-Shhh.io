@@ -10,6 +10,7 @@ import { generateFloor, getFloorDef, findPath, neighbors, ROUTE_TYPES } from './
 import { openChest } from './chest.js';
 import { buildBeats, createLinePicker, schedule, SPEEDS } from './beats.js';
 import { telegraph, preferredResponses } from './ai.js';
+import { buildWorld, FLOOR } from './cave3d/world.js';
 
 const pct = x => `${(x * 100).toFixed(2)}%`;
 
@@ -351,6 +352,89 @@ export function runAcceptanceTests(data, { seed = 1 } = {}) {
     add('12. Level formulas (HP, proficiency, damage bonus) and XP values', problems.length === 0,
       problems.length ? problems.slice(0, 5).join('; ')
         : 'Levels 1-8 checked for both presets. Scout HP 9/13/17..., proficiency +2 (1-4) and +3 (5-8), damage bonus floor((level-1)/2). XP: goblin 25, rat swarm 15, gilded goblin 75, mire crawler 50, stone warden 100, hollow brute 300.');
+  }
+
+  // 13. Same seed -> same 3D cave layout
+  if (data.floors) {
+    const snap = w => JSON.stringify({ t: Array.from(w.tiles), g: w.goblins, c: w.chest, to: w.torches, wa: w.walls });
+    const a = snap(buildWorld(generateFloor(`${seed}:cave`, 1, data.floors)));
+    const b = snap(buildWorld(generateFloor(`${seed}:cave`, 1, data.floors)));
+    const differs = [1, 2, 3].some(k => snap(buildWorld(generateFloor(`${seed}:cave-other${k}`, 1, data.floors))) !== a);
+    add('13. Same seed gives the same 3D cave; other seeds differ', a === b && differs,
+      `Tiles, walls, torches, goblins, and chest identical with the same seed: ${a === b}. Different with other seeds: ${differs}.`);
+  }
+
+  // 14. The tile grid matches the floor graph for 1000 seeds
+  if (data.floors) {
+    const problems = [];
+    let tilesTotal = 0, torchesMax = 0;
+    for (let i = 0; i < 1000 && problems.length < 6; i++) {
+      const f = generateFloor(`${seed}:grid:${i}`, 1, data.floors);
+      const w = buildWorld(f);
+      const tag = `seed ${i}`;
+      if (w.conflicts.length) problems.push(`${tag}: ${w.conflicts[0]}`);
+      const edgeSet = new Set(f.edges.map(([a, b]) => [a, b].sort().join('|')));
+      // every pair of touching regions must be an allowed pair: chamber<->its corridors only
+      for (let y = 0; y < w.height; y++) for (let x = 0; x < w.width; x++) {
+        if (w.tiles[y * w.width + x] !== FLOOR) continue;
+        tilesTotal++;
+        const r1 = w.regionAt(x, y);
+        for (const [dx, dy] of [[1, 0], [0, 1]]) {
+          const r2 = w.regionAt(x + dx, y + dy);
+          if (!r2.type || r2.id === r1.id) continue;
+          const ok = (r1.type === 'corridor' && r2.type === 'chamber' && (r1.a === r2.id || r1.b === r2.id)) ||
+                     (r2.type === 'corridor' && r1.type === 'chamber' && (r2.a === r1.id || r2.b === r1.id));
+          if (!ok) problems.push(`${tag}: ${r1.id} touches ${r2.id} at ${x},${y}`);
+        }
+      }
+      // every graph edge has a corridor that reaches both chambers
+      for (const c of Object.values(w.corridors)) {
+        if (!edgeSet.has([c.a, c.b].sort().join('|'))) problems.push(`${tag}: corridor ${c.tag} is not a graph edge`);
+      }
+      if (Object.keys(w.corridors).length !== f.edges.length) problems.push(`${tag}: ${Object.keys(w.corridors).length} corridors for ${f.edges.length} edges`);
+      // every chamber reachable on foot from the spawn, chest reachable
+      const seen = new Set([`${w.spawn.x},${w.spawn.y}`]);
+      const q = [[w.spawn.x, w.spawn.y]];
+      while (q.length) {
+        const [x, y] = q.shift();
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx, ny = y + dy, k = `${nx},${ny}`;
+          if (!seen.has(k) && w.isFloor(nx, ny)) { seen.add(k); q.push([nx, ny]); }
+        }
+      }
+      for (const n of f.nodes) {
+        const c = w.chambers[n.id];
+        if (!c.tiles.some(([x, y]) => seen.has(`${x},${y}`))) problems.push(`${tag}: ${n.label} not reachable on foot`);
+      }
+      // goblins stand inside their own zone; the chest sits in the exit chamber
+      for (const g of w.goblins) if (w.regionAt(g.x, g.y).id !== g.nodeId) problems.push(`${tag}: goblin outside its zone`);
+      if (w.regionAt(w.chest.x, w.chest.y).id !== f.exit) problems.push(`${tag}: chest not in the exit chamber`);
+      if (w.goblins.length !== f.nodes.reduce((n, x) => n + x.monsters.length, 0)) problems.push(`${tag}: goblin count mismatch`);
+      torchesMax = Math.max(torchesMax, w.torches.length);
+    }
+    add('14. 3D tile grid matches the floor graph (1000 seeds)', problems.length === 0,
+      problems.length ? problems.slice(0, 5).join('; ')
+        : `No overlaps, every corridor is a graph edge, chambers only touch their own corridors, every chamber is reachable on foot, ` +
+          `goblins stand in their zones. ${Math.round(tilesTotal / 1000)} floor tiles per cave on average, up to ${torchesMax} torches (6 lit at once).`);
+  }
+
+  // 15. Collision: random walks never enter a wall
+  if (data.floors) {
+    let steps = 0, refused = 0, bad = 0;
+    for (let i = 0; i < 50; i++) {
+      const w = buildWorld(generateFloor(`${seed}:walk:${i}`, 1, data.floors));
+      const rng = createRng(`${seed}:walker:${i}`);
+      let p = { ...w.spawn };
+      for (let k = 0; k < 2000; k++) {
+        const [dx, dy] = [[1, 0], [-1, 0], [0, 1], [0, -1]][rng.int(0, 3)];
+        const t = { x: p.x + dx, y: p.y + dy };
+        steps++;
+        if (w.walkable(t.x, t.y)) p = t; else refused++;
+        if (!w.isFloor(p.x, p.y)) bad++;
+      }
+    }
+    add('15. The player never enters a wall (100,000 random steps)', bad === 0 && refused > 0,
+      `${steps} steps, ${refused} refused at walls or the chest, ${bad} ended inside a wall.`);
   }
 
   return results;
