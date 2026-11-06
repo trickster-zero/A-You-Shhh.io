@@ -28,6 +28,8 @@ async function boot() {
   //   const e = RPG.encounter('guard', 'goblin', 7); e.act('hard'); e.act('heal'); e.log
   //   RPG.floor('abc')            -> the generated floor 1 for seed "abc"
   //   const r = RPG.run('scout'); r.moves(); r.moveTo('n1'); r.log
+  //   RPG.cave.stats()            -> fps, worst frame, draw calls (while the 3D cave is open)
+  //   ?view=2d                    -> skip the 3D cave and use the 2D map
   window.RPG = {
     data, seed, dice, rules, createRng, createCharacter, createMonster, createEncounter, runEncounter,
     runBatch: opts => runBatch(data, { seed, ...opts }),
@@ -51,7 +53,7 @@ async function boot() {
     app.classList.add('panel');
     renderPanel(data);
   } else {
-    mountGame(app, data, { seed: seedParam });
+    mountGame(app, data, { seed: seedParam, view: params.get('view') });
   }
 }
 
@@ -114,7 +116,7 @@ function renderPanel(data) {
 
 function renderTests(container, results) {
   const rows = results.map(r => testRow(r.pass, r.name, r.details));
-  rows.push(testRow(true, '13. Test panel with "Run 1000 fights"',
+  rows.push(testRow(true, '16. Test panel with "Run 1000 fights"',
     'This panel. Press the button to print win rate, average rounds, average HP left, and the full log of fight #0.'));
   container.replaceChildren(...rows);
 }
