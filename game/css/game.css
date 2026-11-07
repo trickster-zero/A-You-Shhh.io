@@ -541,3 +541,33 @@ select {
 .log:empty::before { content: "The sample log appears after a batch run."; color: var(--muted); }
 
 .cave-fps { position: absolute; left: 16px; bottom: 44px; z-index: 6; font-size: 0.75rem; color: var(--glow); font-variant-numeric: tabular-nums; text-shadow: 0 1px 6px #000; }
+
+
+/* =====================================================================
+   Site section: return link and entry fade
+   ===================================================================== */
+.return-link {
+  position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: 16px; z-index: 50;
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px;
+  font-family: var(--body); font-size: 0.72rem; font-weight: 500;
+  letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted);
+  background: rgba(10, 14, 19, 0.55); border-radius: 999px;
+  transition: color 0.25s, text-shadow 0.25s;
+}
+.return-link::before { content: ""; width: 6px; height: 6px; margin-right: 10px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 8px var(--ember); }
+.return-link:hover, .return-link:focus-visible {
+  color: var(--glow); text-decoration: none;
+  text-shadow: 0 0 10px rgba(143, 211, 255, 0.75), 0 0 22px rgba(143, 211, 255, 0.35);
+}
+body.is-combat .return-link { visibility: hidden; }
+
+/* keep page titles clear of the fixed link */
+.screen { padding-top: 72px; }
+.cave-top { padding-left: 200px; }
+@media (max-width: 760px) { .cave-top { padding-left: 12px; padding-top: 60px; } }
+
+/* entry fade: starts dark, fades out over about a second (matches the site's arrival) */
+.entry-fade { position: fixed; inset: 0; z-index: 100; background: var(--night); pointer-events: none; opacity: 0; }
+.entry-fade.is-playing { animation: entryFade 1s ease-out both; }
+@keyframes entryFade { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .entry-fade.is-playing { animation-duration: 0.01s; } }
