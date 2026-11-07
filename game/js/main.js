@@ -53,8 +53,25 @@ async function boot() {
     app.classList.add('panel');
     renderPanel(data);
   } else {
-    mountGame(app, data, { seed: seedParam, view: params.get('view') });
+    const game = mountGame(app, data, { seed: seedParam, view: params.get('view') });
+
+    // Back/forward cache: never come back to a frozen or blank view.
+    window.addEventListener('pagehide', e => { if (e.persisted) game.reset(); });   // free the 3D view before caching
+    window.addEventListener('pageshow', e => {
+      if (!e.persisted) return;
+      replayFade();
+      game.reset();
+    });
   }
+}
+
+/** Restart the entry fade (the dark overlay that fades out over about a second). */
+function replayFade() {
+  const fade = document.querySelector('.entry-fade');
+  if (!fade) return;
+  fade.classList.remove('is-playing');
+  void fade.offsetWidth;
+  fade.classList.add('is-playing');
 }
 
 async function loadData() {
