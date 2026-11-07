@@ -48,10 +48,36 @@ export function mountGame(root, data, { seed = null, view = null } = {}) {
   };
 
   document.addEventListener('keydown', onKey);
+  document.addEventListener('visibilitychange', onVisibility);
   showStart();
+
+  /* =========================== Page lifecycle =========================== */
+  let pausedByHide = false;
+  function onVisibility() {
+    if (!state.cave) return;
+    if (document.hidden) {
+      if (!state.cave.isPaused()) { state.cave.pause(); pausedByHide = true; }
+    } else if (pausedByHide) {
+      pausedByHide = false;
+      if (state.screen === 'cave') state.cave.resume();   // stays paused if a fight or the 2D map is open
+    }
+  }
+
+  function returnToBase() {
+    state.cave?.pause();
+    const link = document.querySelector('.return-link');
+    location.href = link ? link.href : '../index.html';
+  }
+
+  // returned to main.js: back/forward cache restores call reset()
+  const api = {
+    reset() { pausedByHide = false; state.busy = false; state.menuOpen = false; showStart(); },
+    returnToBase
+  };
 
   /* =========================== Start =========================== */
   function showStart() {
+    setCombat(false);
     destroyCave();
     state.screen = 'start';
     state.run = null;
@@ -78,15 +104,14 @@ export function mountGame(root, data, { seed = null, view = null } = {}) {
     startBtn.addEventListener('click', startRun);
 
     root.replaceChildren(el('section', { className: 'screen start-screen' }, [
-      backLink(),
-      el('h1', { className: 'display title' }, 'Into the tunnel'),
+      el('h1', { className: 'display title' }, 'The Sunken Cave'),
       el('p', { className: 'lede' }, 'The cave runs down in floors. Each floor ends at a chest, and something always guards it. Choose who goes in.'),
       el('fieldset', { className: 'choices' }, [el('legend', { className: 'sr-only' }, 'Choose a fighter'), ...choices]),
       el('p', { className: 'foe-line' }, `Floor 1: ${floorDef.name}. Goblins, a crevice, and a guarded chest.`),
       startBtn,
-      el('p', { className: 'key-help' }, 'Keys: 1 or 2 to choose, Enter to start.')
+      el('p', { className: 'key-help' }, 'Keys: 1 or 2 to choose, Enter to start, Esc to return to the base.')
     ]));
-    focusSoon(root.querySelector('.choice-input:checked'));
+    focusSoon(startBtn);                      // keyboard focus lands on the button
   }
 
   function nextSeed() {
@@ -106,6 +131,7 @@ export function mountGame(root, data, { seed = null, view = null } = {}) {
 
   /* =========================== Floor map =========================== */
   function showMap() {
+    setCombat(false);
     const { run } = state;
     state.cave?.pause();
     state.mode = '2d';
@@ -125,8 +151,7 @@ export function mountGame(root, data, { seed = null, view = null } = {}) {
 
     root.replaceChildren(el('section', { className: 'screen map-screen' }, [
       el('header', { className: 'enc-head' }, [
-        backLink(),
-        el('h1', { className: 'display title' }, `Floor ${run.floorNumber} · ${run.def.name}`),
+          el('h1', { className: 'display title' }, `Floor ${run.floorNumber} · ${run.def.name}`),
         el('div', { className: 'head-right' }, [
           ...(canUse3d() ? [viewButton('3D view (M)', showCave)] : []),
           el('p', { className: 'round-count' }, `Seed ${run.runSeed}`)
@@ -281,6 +306,7 @@ export function mountGame(root, data, { seed = null, view = null } = {}) {
 
   /* =========================== 3D cave =========================== */
   async function showCave() {
+    setCombat(false);
     const { run } = state;
     state.mode = 'cave';
     state.screen = 'cave';
@@ -304,8 +330,7 @@ export function mountGame(root, data, { seed = null, view = null } = {}) {
     root.replaceChildren(el('section', { className: 'cave-screen' }, [
       u.host,
       el('header', { className: 'cave-top' }, [
-        backLink(),
-        el('h1', { className: 'display cave-title' }, `Floor ${run.floorNumber} · ${run.def.name}`),
+          el('h1', { className: 'display cave-title' }, `Floor ${run.floorNumber} · ${run.def.name}`),
         el('div', { className: 'cave-top-right' }, [viewButton('2D map (M)', showMap), el('span', { className: 'round-count' }, `Seed ${run.runSeed}`)])
       ]),
       el('aside', { className: 'cave-side' }, [
@@ -366,6 +391,7 @@ export function mountGame(root, data, { seed = null, view = null } = {}) {
 
   /** Back to exploring after a fight: the 3D cave if we came from it, otherwise the 2D map. */
   function explore(res) {
+    setCombat(false);
     if (state.mode === 'cave' && state.cave && state.caveUi) {
       state.screen = 'cave';
       const u = state.caveUi;
@@ -407,7 +433,10 @@ export function mountGame(root, data, { seed = null, view = null } = {}) {
   }
 
   /* =========================== Encounter =========================== */
+  function setCombat(on) { document.body.classList.toggle('is-combat', on); }
+
   function beginEncounter() {
+    setCombat(true);
     const { enc, meta } = state.run.startEncounter();
     state.enc = enc;
     state.meta = meta;
@@ -447,8 +476,7 @@ export function mountGame(root, data, { seed = null, view = null } = {}) {
 
     encounterHost().replaceChildren(el('section', { className: 'screen encounter-screen' }, [
       el('header', { className: 'enc-head' }, [
-        backLink(),
-        el('h1', { className: 'display title' }, meta.node.label),
+          el('h1', { className: 'display title' }, meta.node.label),
         el('div', { className: 'head-right' }, [speedControl(), ui.round])
       ]),
       el('div', { className: 'arena' }, [ui.player.wrap, el('span', { className: 'versus display', ariaHidden: 'true' }, 'vs'), ui.monster.wrap]),
@@ -729,6 +757,7 @@ export function mountGame(root, data, { seed = null, view = null } = {}) {
 
   /* =========================== Run end =========================== */
   function showRunEnd(kind) {
+    setCombat(false);
     const { run } = state;
     destroyCave();
     state.screen = 'end';
@@ -740,7 +769,6 @@ export function mountGame(root, data, { seed = null, view = null } = {}) {
     change.addEventListener('click', showStart);
 
     root.replaceChildren(el('section', { className: 'screen end-screen' }, [
-      backLink(),
       el('div', { className: `outcome end-card ${won ? 'is-win' : 'is-defeat'}` }, [
         el('h1', { className: 'display outcome-title' }, won ? `Floor ${run.floorNumber} cleared` : 'Run over'),
         el('p', { className: 'outcome-text' }, won
@@ -761,6 +789,13 @@ export function mountGame(root, data, { seed = null, view = null } = {}) {
   function onKey(e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.target.matches?.('input[type="text"], textarea, select')) return;
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (state.menuOpen) { closeMenu(); return; }
+      returnToBase();
+      return;
+    }
 
     if (state.screen === 'start') {
       const presets = Object.keys(data.characters);
@@ -797,7 +832,6 @@ export function mountGame(root, data, { seed = null, view = null } = {}) {
     if (state.screen !== 'encounter') return;
 
     if (state.menuOpen) {
-      if (e.key === 'Escape') { e.preventDefault(); closeMenu(); return; }
       const items = [...state.ui.menu.querySelectorAll('.menu-item')];
       const n = Number(e.key);
       if (n >= 1 && n <= items.length) { e.preventDefault(); if (!items[n - 1].disabled) items[n - 1].click(); }
@@ -814,6 +848,8 @@ export function mountGame(root, data, { seed = null, view = null } = {}) {
     }
     trigger(def.action);
   }
+
+  return api;
 }
 
 /* =========================== Helpers =========================== */
@@ -899,7 +935,6 @@ function statList(pairs) {
   return el('dl', { className: 'stat-list' }, pairs.map(([k, v]) => el('div', {}, [el('dt', {}, k), el('dd', {}, String(v))])));
 }
 
-function backLink() { return el('a', { className: 'back-link', href: '../index.html' }, 'Back to the base'); }
 
 const signed = n => (n >= 0 ? `+${n}` : `−${Math.abs(n)}`);
 const damageText = a => (a.modifier ? `${a.dice}${a.modifier > 0 ? '+' : '−'}${Math.abs(a.modifier)}` : a.dice);
