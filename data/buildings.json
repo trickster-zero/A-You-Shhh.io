@@ -63,3 +63,11 @@
     "pin": { "x": 23.4, "y": 38.0 }
   }
 ]
+  {
+    "id": "cave-entrance",
+    "label": "Sunken Cave",
+    "description": "A cave beneath the western cliffs. Floor one is open. Deeper floors are being carved.",
+    "href": "game/index.html",
+    "status": "open",
+    "hotspot": { "x": 2.5, "y": 44.0, "w": 11.0, "h": 19.0 }
+  }
