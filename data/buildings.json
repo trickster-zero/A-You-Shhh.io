@@ -62,8 +62,7 @@
     "hotspot": { "x": 9.8, "y": 32.2, "w": 28.0, "h": 22.5 },
     "pin": { "x": 23.4, "y": 38.0 }
   }
-]
-  {
+{
     "id": "cave-entrance",
     "label": "Sunken Cave",
     "description": "A cave beneath the western cliffs. Floor one is open. Deeper floors are being carved.",
@@ -71,3 +70,6 @@
     "status": "open",
     "hotspot": { "x": 2.5, "y": 44.0, "w": 11.0, "h": 19.0 }
   }
+
+]
+  
