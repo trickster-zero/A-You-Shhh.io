@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kenan-Flagler Elective Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: pick the concentrations you're aiming for, see progress toward each, then a Year x Mod grid of course cards; overlap heatmap and course-by-concentration matrix below. */
+:root{
+  --bg:#f5f6f8; --surface:#ffffff; --ink:#1b2130; --muted:#5d6577; --line:#dde1e8;
+  --accent:#2747c9; --ok:#1f8a4c; --warn:#b5531a;
+  --display:"Newsreader", Georgia, serif;
+  --body:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#12151c; --surface:#1b2029; --ink:#e7eaf0; --muted:#9aa2b3; --line:#2c3340;
+    --accent:#7d93ff; --ok:#4fc580; --warn:#f08a50; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12151c; --surface:#1b2029; --ink:#e7eaf0; --muted:#9aa2b3; --line:#2c3340;
+  --accent:#7d93ff; --ok:#4fc580; --warn:#f08a50; color-scheme: dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:14px;line-height:1.45}
+.wrap{max-width:1280px;margin:0 auto;padding:24px 20px 56px;display:flex;flex-direction:column;gap:20px}
+h1{font-family:var(--display);font-weight:600;font-size:30px;margin:0;text-wrap:balance}
+h2{font-family:var(--display);font-weight:600;font-size:21px;margin:0 0 4px;text-wrap:balance}
+.sub{color:var(--muted);max-width:80ch;margin:6px 0 0}
+.mono{font-family:var(--mono);font-size:12px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px}
+button{font:inherit}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* focus picker */
+.focus{display:flex;flex-wrap:wrap;gap:6px}
+.fchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:999px;padding:5px 11px;cursor:pointer;font-size:13px}
+.fchip .dot{width:10px;height:10px;border-radius:50%;background:var(--c)}
+.fchip[aria-pressed="true"]{background:color-mix(in srgb,var(--c) 16%,var(--surface));border-color:var(--c);font-weight:600}
+.fchip:hover{border-color:var(--c)}
+.row{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center}
+.lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+
+/* tracker */
+.tracker{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
+.req{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:13px 15px;display:flex;flex-direction:column;gap:8px;border-top:4px solid var(--c)}
+.req h3{margin:0;font-size:15px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.req .big{font-variant-numeric:tabular-nums;font-size:12.5px;font-weight:600;color:var(--c);white-space:nowrap}
+.bar{height:8px;background:var(--line);border-radius:5px;overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--c);transition:width .25s}
+.checks{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;font-size:12.8px}
+.checks li{display:flex;gap:7px;align-items:flex-start}
+.checks .d{flex:none;width:15px;text-align:center;font-weight:600}
+.checks .y{color:var(--ok)} .checks .n{color:var(--warn)}
+.toggle{display:flex;gap:7px;align-items:center;font-size:12.5px;color:var(--muted);cursor:pointer}
+.toggle input{accent-color:var(--accent)}
+
+/* controls */
+.controls{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 14px;position:sticky;top:0;z-index:5}
+.btn{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:999px;padding:5px 12px;cursor:pointer;font-size:13px}
+.btn:hover{border-color:var(--accent)}
+.spacer{flex:1}
+
+/* tags */
+.tag{display:inline-flex;align-items:center;gap:3px;font-size:11.3px;font-weight:600;padding:2px 7px;border-radius:999px;white-space:nowrap;color:var(--c);background:color-mix(in srgb,var(--c) 14%,var(--surface))}
+.tag.weak{background:transparent;border:1px dashed var(--c);font-weight:500}
+.also{font-size:11.3px;color:var(--muted)}
+
+/* grid */
+.grid{display:grid;grid-template-columns:72px 1fr 1fr;gap:12px}
+.colhead{font-family:var(--display);font-size:18px;font-weight:600;padding:0 4px}
+.rowhead{display:flex;flex-direction:column;gap:6px;padding-top:8px}
+.rowhead b{font-family:var(--display);font-size:22px}
+.cell{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.cellmeta{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+.core{font-size:12px;color:var(--muted);border-left:3px solid var(--line);padding:2px 0 2px 8px}
+.star{grid-column:2 / span 2;background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:10px;padding:10px 14px;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.star b{font-size:14px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:8px}
+.card{all:unset;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;padding:9px 10px 9px 13px;border:1px solid var(--line);border-radius:8px;background:var(--surface);cursor:pointer;position:relative;min-width:0}
+.card:hover{border-color:var(--accent)}
+.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.stripe{position:absolute;left:0;top:6px;bottom:6px;width:5px;border-radius:3px;display:flex;flex-direction:column;overflow:hidden}
+.stripe i{flex:1}
+.card .top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.card .name{font-weight:600;font-size:13.5px;line-height:1.3}
+.card .tags{display:flex;flex-wrap:wrap;gap:4px}
+.card .note{font-size:11.5px;color:var(--muted)}
+.card .warn{font-size:11.5px;color:var(--warn);font-weight:500}
+.pick{flex:none;width:18px;height:18px;border-radius:5px;border:1.5px solid var(--muted);display:grid;place-items:center;font-size:12px;line-height:1;color:transparent}
+.card[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:color-mix(in srgb,var(--accent) 6%,var(--surface))}
+.card[aria-pressed="true"] .pick{background:var(--accent);border-color:var(--accent);color:#fff}
+.multi{font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);white-space:nowrap}
+.empty{font-size:12.5px;color:var(--muted);font-style:italic}
+.pill{font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--line);white-space:nowrap}
+.pill.over{color:var(--warn);border-color:var(--warn)}
+.pill.okp{color:var(--ok);border-color:var(--ok)}
+
+/* heatmap + matrix */
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;font-size:12.5px}
+.heat td,.heat th{width:44px;height:34px;text-align:center;padding:0;border:1px solid var(--surface)}
+.heat th{font-size:11px;font-weight:600;color:var(--muted)}
+.heat th.rh{text-align:right;padding-right:8px;width:auto;white-space:nowrap}
+.heat td button{all:unset;display:grid;place-items:center;width:100%;height:100%;cursor:pointer;font-variant-numeric:tabular-nums;font-weight:600;font-size:12px}
+.heat td button:focus-visible{outline:2px solid var(--accent)}
+.heat td.diag button{outline:1px dashed var(--muted);outline-offset:-3px}
+.mx{width:100%}
+.mx th,.mx td{padding:6px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+.mx th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--surface)}
+.mx td.c,.mx th.c{text-align:center;width:38px}
+.mx th.c.on{color:var(--ink);background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
+.mx td.c.on{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.mx .dt{display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--c)}
+.mx .dt.weak{background:transparent;border:1.5px dashed var(--c)}
+.mx td.slots{white-space:nowrap;color:var(--muted);font-size:12px}
+.mx td.n{font-variant-numeric:tabular-nums;font-weight:600;text-align:center}
+.taken{display:flex;flex-wrap:wrap;gap:6px}
+.foot{font-size:12.5px;color:var(--muted);max-width:95ch;margin:0;padding-left:18px}
+.foot li{margin:3px 0}
+.back{font-size:13px;color:var(--muted);text-decoration:none;align-self:flex-start}
+.back:hover{color:var(--accent)}
+
+@media (max-width:900px){
+  .grid{grid-template-columns:1fr}
+  .colhead{display:none}
+  .rowhead{flex-direction:row;align-items:baseline;gap:10px}
+  .star{grid-column:auto}
+  .cell::before{content:attr(data-label);font-family:var(--display);font-weight:600;font-size:16px}
+}
+@media (prefers-reduced-motion:reduce){ .bar>i{transition:none} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<a href="../builds.html" class="back">&larr; Back to Builds</a>
+
+<header>
+  <h1>Kenan-Flagler Elective Map</h1>
+  <p class="sub">All 13 concentrations, mapped onto Year 1 and Year 2, Mod III and IV. Pick the concentrations you're aiming for below. The progress cards, the "counts for" badges and the filters all follow that choice. Click a course to add it to your plan or remove it.</p>
+</header>
+
+<section class="panel" aria-labelledby="focus-h">
+  <div class="row" style="justify-content:space-between">
+    <h2 id="focus-h" style="margin:0">Concentrations I'm aiming for</h2>
+    <span class="also">Tip: click a square in the overlap heatmap further down to compare any two concentrations.</span>
+  </div>
+  <div class="focus" id="focus" style="margin-top:10px"></div>
+  <div class="row" style="margin-top:12px">
+    <span class="lbl">Already taken in Mod I–II</span>
+    <div class="taken" id="taken"></div>
+  </div>
+  <div class="row" style="margin-top:10px">
+    <span class="lbl">STAR counts as</span>
+    <label class="toggle"><input type="checkbox" id="starHC" checked> STAR Healthcare (4.5 cr)</label>
+    <label class="toggle"><input type="checkbox" id="starMKT" checked> Marketing elective (needs approval)</label>
+    <label class="toggle"><input type="checkbox" id="starSE"> Approved sustainability STAR (assumed 4.5 cr)</label>
+  </div>
+</section>
+
+<section class="tracker" id="tracker" aria-label="Concentration progress"></section>
+
+<div class="controls" role="toolbar" aria-label="Filters">
+  <label class="toggle"><input type="checkbox" id="focusOnly" checked> Only courses that count toward my picks</label>
+  <label class="toggle"><input type="checkbox" id="multiOnly"> Counts for 2+ of my picks</label>
+  <label class="toggle"><input type="checkbox" id="planOnly"> My plan only</label>
+  <span class="spacer"></span>
+  <button type="button" class="btn" id="copyPlan">Copy plan as text</button>
+  <button type="button" class="btn" id="resetPlan">Reset to suggested plan</button>
+  <span class="mono" id="copyMsg" aria-live="polite"></span>
+</div>
+
+<section class="grid" id="grid" aria-label="Year by Mod grid"></section>
+
+<section class="panel">
+  <h2>Year 2, Mod I and II</h2>
+  <p class="sub" style="margin-bottom:10px">Outside the Mod III/IV window, but several concentrations depend on courses here. Courses that run across several Mods sit in their first Mod.</p>
+  <div class="grid" id="grid2"></div>
+</section>
+
+<section class="panel">
+  <h2>Which concentrations overlap most</h2>
+  <p class="sub" style="margin-bottom:12px">Each square shows how many courses count toward both concentrations. The darker the square, the easier it is to finish both. The diagonal shows each concentration's total. Click a square to set those two as your picks.</p>
+  <div class="scroll"><table class="heat" id="heat"></table></div>
+</section>
+
+<section class="panel">
+  <h2>Every course against every concentration</h2>
+  <p class="sub" style="margin-bottom:12px">A solid dot means the course counts toward that concentration's requirement. A dashed dot means it's listed as relevant but doesn't count. Courses that count for more of your picks come first; columns for your picks are shaded.</p>
+  <div class="scroll" style="max-height:640px;overflow-y:auto"><table class="mx" id="matrix"></table></div>
+</section>
+
+<section class="panel">
+  <h2>Not placed in a Mod by the guides</h2>
+  <div class="cards" id="unsched" style="margin-top:8px"></div>
+</section>
+
+<ul class="foot">
+  <li>Source: UNC Kenan-Flagler 2026–2027 Full-Time MBA Concentration Guide and Career Pathways Guide. The Mod placement comes from their sample sequences. Check the live course schedule before bidding.</li>
+  <li>The guides don't say whether one course can count toward two concentrations at once. This map assumes it can, so confirm with the concentration leads.</li>
+  <li>Credits are assumed to be 1.5 unless the guide says otherwise. Energy courses are 1.0–1.5 credits, and credits for Healthcare's Global Immersion Elective are still to be announced.</li>
+  <li>Requirement checks are simplified versions of the rules in the guide. Each concentration's progress card states the rule it checks. Treat the official guide as final.</li>
+  <li>With STAR, the guide suggests taking only 3–4 other courses across Mod III and IV in Year 1. The pill next to Y1 counts your planned electives against that.</li>
+</ul>
+
+</div>
+
+<script>
+const SLOTS={y1m3:"Y1 Mod III",y1m4:"Y1 Mod IV",y2m1:"Y2 Mod I",y2m2:"Y2 Mod II",y2m3:"Y2 Mod III",y2m4:"Y2 Mod IV"};
+const CONC=[
+  {id:"hc",  ab:"HC",   name:"Healthcare", c:"#129c8c"},
+  {id:"mkt", ab:"MKT",  name:"Marketing", c:"#e07b1a"},
+  {id:"con", ab:"CON",  name:"Consulting", c:"#7a5ad8"},
+  {id:"bams",ab:"BAMS", name:"Business Analytics & Mgmt Science", c:"#3b82d6"},
+  {id:"tipm",ab:"TIPM", name:"Tech Innovation & Product Mgmt", c:"#cf4a3a"},
+  {id:"mpo", ab:"MPO",  name:"Managing People & Organizations", c:"#a0703f"},
+  {id:"om",  ab:"OM",   name:"Operations", c:"#5f8f1f"},
+  {id:"ent", ab:"ENT",  name:"Entrepreneurship", c:"#d9487a"},
+  {id:"cf",  ab:"CF",   name:"Corporate Finance", c:"#5a7593"},
+  {id:"cmi", ab:"CMI",  name:"Capital Markets & Investments", c:"#2e9a4f"},
+  {id:"ene", ab:"ENE",  name:"Energy", c:"#c49a06"},
+  {id:"se",  ab:"SE",   name:"Sustainable Enterprise", c:"#2fa3b8"},
+  {id:"re",  ab:"RE",   name:"Real Estate", c:"#a14fb0"}
+];
+const CB=Object.fromEntries(CONC.map(c=>[c.id,c]));
+// role labels; roles marked weak:true don't count toward the requirement (or are capped "other" buckets shown dashed)
+const ROLE={
+  con:{r:"required",hr:"Highly Rec.",hra:"HR · analytics",x:"other relevant"},
+  mkt:{e:"",l:"other area, max 2"},
+  bams:{r:"required",e:""},
+  cmi:{r:"Y1 required",p:"pathway",k:"practicum",o:"other"},
+  cf:{hr:"Highly Rec.",l:"other approved"},
+  ene:{c:"core",e:"approved"},
+  ent:{f:"foundation",e:""},
+  hc:{e:""}, mpo:{e:"",r:"core"},
+  om:{g:"global cluster",a:"analytics cluster",p:"application cluster",l:"other, max 2"},
+  re:{b:"both tracks",d:"development track",f:"finance track",x:"beyond requirement"},
+  se:{r:"core",e:""}, tipm:{r:"core",e:""}
+};
+const WEAK=new Set(["x"]);
+const LIMITED={mkt:"l",om:"l",cf:"l"}; // counted but capped -> dashed tag
+// [code, name, slots, roles, opts]
+const RAW=[
+ // Healthcare
+ ["894B","Healthcare Brand Plan",["y1m3","y2m3"],{hc:"e",mkt:"e"}],
+ ["893","Challenge of Healthcare: A System Overview",["y1m3","y2m3"],{hc:"e",om:"l"}],
+ ["898","Design & Delivery of Healthcare Systems",["y1m3","y2m3"],{hc:"e",om:"p"}],
+ ["894C","New Drug Development",["y1m3","y2m3"],{hc:"e"}],
+ ["870H","Global Immersion Elective: Healthcare",["y1m3","y2m3"],{hc:"e"},{disp:"870",note:"Credits and locations still to be announced"}],
+ ["893J","Regulations & Principles of Health Insurance",["y1m4","y2m4"],{hc:"e"}],
+ ["893B","Healthcare Analytics",["y1m4","y2m4"],{hc:"e",bams:"e",om:"l"},{note:"Healthcare's sample sequence shows Y2 Mod II instead"}],
+ ["895","Strategic Value Creation for Life Sciences Cos.",["y1m4","y2m4"],{hc:"e",ent:"e"}],
+ ["894","Healthcare Marketing",["y2m1"],{hc:"e",mkt:"e"}],
+ ["893G","Global Healthcare",["y2m1"],{hc:"e"}],
+ // Marketing
+ ["760","Pricing",["y1m3","y2m3"],{mkt:"e",con:"hr",bams:"e",tipm:"e",om:"l"}],
+ ["742","Data Science & AI in Business",["y1m3","y2m3"],{mkt:"e",con:"hra",bams:"r"},{note:"For BAMS, 742 or 743 meets the fourth required course"}],
+ ["752","Consumer Behavior",["y1m3","y2m3"],{mkt:"e"}],
+ ["753A","Product Management",["y1m3","y2m3"],{mkt:"e",tipm:"r"}],
+ ["753","Brand Management",["y1m4","y2m4"],{mkt:"e"}],
+ ["755","Digital Marketing & Social Media",["y1m4","y2m4"],{mkt:"e",con:"x",bams:"e",tipm:"e"}],
+ ["747","Marketing Strategy: Tech Environments",["y1m4","y2m4"],{mkt:"e",con:"x"}],
+ ["743","Managing Customer Data: Journeys & Growth",["y2m2"],{mkt:"e",con:"x",bams:"r",tipm:"e"}],
+ ["754A","Innovation & Design Thinking",["y2m1","y2m2"],{mkt:"e",con:"hr",ent:"e",tipm:"e"}],
+ ["763","Behavioral Economics & Decision Making",["y2m1"],{mkt:"e",bams:"e",tipm:"e"}],
+ ["745","Marketing & Sustainability",["y2m1"],{mkt:"e",tipm:"e"}],
+ ["847","Sales: Professional Selling",["y2m2"],{mkt:"e",con:"x",ent:"e"}],
+ ["720","Technology Strategy & Business Innovation",["y1m4","y2m4"],{tipm:"r",mkt:"l",con:"x"}],
+ ["708","Service & Platform Operations",["y1m4","y2m4"],{om:"p",bams:"e",mkt:"l"}],
+ ["741G","Global Marketing",[],{mkt:"e"}],
+ // Consulting
+ ["826E","Intro to Consulting Skills II: Internship Skills",["y1m4"],{con:"hr"},{note:"Useful before a consulting summer internship"}],
+ ["704","Value Chain Innovation: Tech, Data & Analytics",["y1m4","y2m4"],{con:"hra",bams:"e",om:"a",tipm:"e"}],
+ ["805A","Corporate Strategy",["y1m3","y2m3"],{con:"hr"}],
+ ["710","Project Management",["y1m4","y2m1","y2m4"],{con:"hr",om:"g",tipm:"e"},{note:"The guides list it in different Mods"}],
+ ["706A","Thinking & Communicating with Data",["y2m1"],{con:"hra",bams:"e",om:"a",se:"e",tipm:"e"}],
+ ["846A","Private Equity",["y2m1","y2m2"],{con:"hr",cf:"l",cmi:"o",ent:"e"}],
+ ["880M","STAR Engagement Leader & Consulting Seminar",["y2m3"],{con:"hr"},{note:"Runs across Y2 Mod III and IV"}],
+ ["826D","Advanced Consulting Skills & Frameworks",["y2m2"],{con:"r"}],
+ ["862A","Global Business Strategy",["y2m4"],{con:"x"}],
+ ["829","Strategy in High Velocity Markets",["y1m3","y2m4"],{con:"x",ent:"e"},{note:"The guides list it in different Mods"}],
+ // BAMS / analytics
+ ["705","Business Modeling: Prescriptive Analytics",["y1m3","y2m3"],{bams:"r",om:"a"}],
+ ["706","Data Analytics: Advanced Methods",["y1m3","y2m3"],{bams:"r",om:"a",con:"x"}],
+ ["720C","Intro to Python for Business Analytics",["y1m4","y2m3"],{bams:"e"},{note:"Online MBA course"}],
+ // CMI
+ ["792A","Investments I",["y1m3","y2m3"],{cmi:"r",bams:"e"},{note:"Take 792A or 792B"}],
+ ["792B","Investments I: Advanced Quantitative Analysis",["y1m3","y2m3"],{cmi:"r",bams:"e"},{note:"Take 792A or 792B"}],
+ ["792C","Investments II",["y1m4","y2m4"],{cmi:"r",bams:"e"}],
+ ["793A","PRIME: Investment Mgmt Experiential Learning",["y1m3"],{cmi:"k"},{note:"Runs Y1 Mod III–IV; apply in fall of Year 1"}],
+ ["779","Applied Investment Management (AIM)",["y2m1"],{cmi:"k"},{cr:6,note:"6 cr, runs all of Year 2; apply in Year 1"}],
+ ["774","Global Economics",["y2m2"],{cmi:"p",cf:"l"}],
+ ["783","Derivatives",["y2m2"],{cmi:"p",cf:"l"}],
+ ["791","Fixed Income",["y2m3"],{cmi:"p",cf:"l"}],
+ ["794","Private Wealth Management",["y2m4"],{cmi:"p"}],
+ ["797","Financial Risk Management",["y2m4"],{cmi:"p",cf:"l"}],
+ ["791A","Current Topics in Finance: AI in Finance",["y2m3"],{cmi:"o"}],
+ // Corporate finance
+ ["777","Corporate Valuation & Financial Strategy",["y1m3"],{cf:"hr",cmi:"o",con:"x"}],
+ ["733","Financial Statement Analysis",["y1m4","y2m4"],{cf:"hr",cmi:"o"}],
+ ["793","Investment Banking",["y1m4"],{cf:"hr"}],
+ ["789","Mergers & Acquisitions",["y2m3"],{cf:"hr"}],
+ ["732","Taxes & Business Strategy",["y2m3"],{cf:"l"}],
+ ["738C","Topics in Financial Reporting",["y2m2"],{cf:"l"}],
+ ["787","Multinational Corporate Finance",["y2m2"],{cf:"l"}],
+ ["788","Industrial Finance",["y1m4","y2m4"],{cf:"l",ene:"e"}],
+ ["790","Strategy of Project Finance",["y1m3","y2m3"],{cf:"l",ene:"e"}],
+ ["793M","Practical Financial Modeling",[],{cf:"l"}],
+ ["843","Private Deal Structures",[],{cf:"l"}],
+ ["843E","Entrepreneurship Through Acquisition",["y2m1"],{cf:"l",ent:"e"}],
+ ["846O","Entrepreneurial Finance",["y2m1"],{cf:"l",ent:"e"}],
+ ["853","Real Estate & Capital Markets",["y2m4"],{cf:"l"},{re:true}],
+ // Energy
+ ["791B","Case Studies in the Energy Value Chain",["y1m3","y2m3"],{ene:"c"}],
+ ["790R","Business of Midstream, Refining & Petrochemicals",["y1m3","y2m3"],{ene:"c"}],
+ ["790E","The Business of Power",["y1m3","y2m3"],{ene:"c"}],
+ ["833","The Business of Renewable Energy",["y1m4","y2m4"],{ene:"c",se:"e"}],
+ ["790C","Business of Oil & Gas: Exploration & Production",["y2m1"],{ene:"c"}],
+ ["790B","Introduction to the Energy Value Chain",["y2m2"],{ene:"c",se:"e"},{note:"Energy's gateway course; Year 1 runs it in Mod II"}],
+ ["790A","Renewable Energy: Project Development & Finance",["y2m1"],{ene:"e",se:"e"}],
+ ["790S","The Business of Energy Consulting",["y1m4","y2m4"],{ene:"e"}],
+ ["790T","Energy Taxation & Policy",["y1m4","y2m4"],{ene:"e"}],
+ ["790F","Fossil Fuel Firms & the Challenge of Carbon",["y1m4","y2m4"],{ene:"e",se:"e"}],
+ ["795","Commercializing Emerging Energy Technologies",["y1m4","y2m4"],{ene:"e"}],
+ // Entrepreneurship
+ ["835","Introduction to Entrepreneurship",["y1m3","y2m3"],{ent:"f"}],
+ ["849A","Entrepreneurs Lab I",["y1m3","y2m3"],{ent:"f"}],
+ ["846J","Business Plan Analysis",["y1m4","y2m4"],{ent:"f"}],
+ ["849B","Entrepreneurs Lab II",["y1m4","y2m4"],{ent:"f"}],
+ ["842","New Ventures Discovery",["y1m3","y2m3"],{ent:"e"}],
+ ["888","Business Projects",["y2m1","y2m2","y2m3","y2m4"],{ent:"e"}],
+ ["817","Venture Capital Valuation & Deal Structure",["y2m3"],{ent:"e"}],
+ ["846E","Venture Capital / Angel Intern Program",["y2m1","y2m3"],{ent:"e"},{note:"Runs over two Mods"}],
+ ["846R","Applied Private Investment Management",["y2m1","y2m2","y2m3","y2m4"],{ent:"e"}],
+ ["832","Managing Growing Enterprises",["y2m3"],{ent:"e"}],
+ ["843A","Family Business I",["y2m3"],{ent:"e"}],
+ ["843B","Family Business II: Governance & Ownership",["y2m4"],{ent:"e"}],
+ ["828C","Strategic Innovation",[],{ent:"e"}],
+ // MPO
+ ["802","Ethical Leadership",["y1m4"],{mpo:"e"},{note:"Can fill your Y1 Mod IV ethics (ECIR) core course"}],
+ ["840","Managerial Decision Making",["y1m3","y2m3"],{mpo:"e"}],
+ ["803G","Navigating Work, Worth & Influence",["y1m4","y2m4"],{mpo:"e",se:"e"}],
+ ["840B","Leading Groups & Teams",["y1m4","y2m4"],{mpo:"e",tipm:"e"}],
+ ["721A","Managing Innovation",["y2m2"],{mpo:"e",tipm:"e"}],
+ ["803J","Adaptive Leadership Communication",["y2m1","y2m4"],{mpo:"e"}],
+ ["803T","Storytelling to Influence & Inspire",["y2m2"],{mpo:"e",se:"e"}],
+ ["807D","Coaching & Leadership Program",["y2m1"],{mpo:"e"}],
+ ["822","Negotiations",["y2m1","y2m2"],{mpo:"e"}],
+ ["861","Global Leadership",["y2m1","y2m2"],{mpo:"e"}],
+ // Operations
+ ["705A","Careers in Operations",["y1m3","y2m3"],{om:"p"}],
+ ["713","Sustainable Operations",["y1m4","y2m4"],{om:"g",se:"e"}],
+ ["718","Global Supply Chain Management",["y2m1","y2m2"],{om:"g",con:"x"}],
+ // Real estate
+ ["851","Real Estate Modeling",["y1m3"],{re:"b"}],
+ ["854B","Construction Basics for RE Development",["y1m3"],{re:"d"}],
+ ["852B","Cases in Real Estate",["y1m4"],{re:"b"}],
+ ["853D","RE Macroeconomics & Securities Markets",["y1m4"],{re:"b",cf:"l"},{re:true,note:"First years only"}],
+ ["853B","Real Estate Law",["y2m1"],{re:"b"}],
+ ["854","RE Development Process: Development",["y2m1"],{re:"d"},{cr:6,note:"6 cr, Mod I–II, project required"}],
+ ["854A","RE Development Finance",["y2m1"],{re:"f"},{cr:3,note:"3 cr, Mod I–II"}],
+ ["853E","Financing Affordable Housing",["y2m2"],{re:"b"}],
+ ["853C","International Real Estate Investment",["y2m3"],{re:"f"}],
+ ["854C","Affordable Housing Practicum",["y2m3"],{re:"x"},{cr:3,note:"3 cr, Mod III–IV"}],
+ // Sustainable enterprise
+ ["831C","Strategy & Sustainability",["y1m4"],{se:"r"},{note:"Can fill your Y1 Mod IV ethics (ECIR) core course"}],
+ ["804M","Corporate Reputation Management",["y2m1"],{se:"e"}],
+ ["831F","Climate Tech Startups & Investors",["y2m1"],{se:"e"}],
+ ["858","Markets, Government & Sustainable Growth",["y2m1"],{se:"e"}],
+ ["869C","Sustainable Finance",["y2m2"],{se:"e"}],
+ ["833A","Systems Thinking for Sustainable Enterprise",["y2m3"],{se:"e"}],
+ ["870S","GIE: Sustainability & Social Entrepreneurship",["y2m3"],{se:"e"},{disp:"870",cr:3,note:"3 cr"}],
+ ["860","Rural Economic Development",["y2m4"],{se:"e"}],
+ // Taken earlier (Y1 Mod I–II)
+ ["826B","Intro to Consulting Skills & Frameworks",[],{con:"r",om:"l"},{past:true,cr:1}],
+ ["821","Casing Fundamentals",[],{con:"hr"},{past:true}],
+ ["750","Marketing, Brand & Product Management",[],{tipm:"r"},{past:true}],
+ ["852","Real Estate Process",[],{re:"b",cf:"l"},{past:true,cr:1,re:true}],
+ ["790BY1","Introduction to the Energy Value Chain (Y1)",[],{ene:"c",se:"e"},{past:true,disp:"790B",same:"790B"}]
+];
+const COURSES=RAW.map(([code,name,slots,roles,o])=>Object.assign({code,name,slots,roles,cr:1.5,disp:code},o||{}));
+const BY=Object.fromEntries(COURSES.map(c=>[c.code,c]));
+const PAST=COURSES.filter(c=>c.past);
+
+const SUGGESTED=["894B@y1m3","760@y1m3","755@y1m4","826E@y1m4","894@y2m1","706A@y2m1","826D@y2m2","743@y2m2","805A@y2m3","753A@y2m3","753@y2m4","846J@y2m4","895@y2m4"];
+const CORE={
+  y1m3:"Core: Presenting with Impact or Management Communication, plus your Mod III core choice",
+  y1m4:"Core: Leading & Managing (MBA 801) · ethics (ECIR) course · Decision Making with Data & AI (MBA 715)"
+};
+const KEY="kf-elective-map-v2";
+const $=id=>document.getElementById(id);
+
+let plan=new Set(SUGGESTED), focus=new Set(["hc","mkt","con"]), taken=new Set(["826B"]);
+try{
+  const s=JSON.parse(localStorage.getItem(KEY)||"null");
+  if(s){
+    if(Array.isArray(s.plan)) plan=new Set(s.plan.filter(k=>BY[k.split("@")[0]]));
+    if(Array.isArray(s.focus)&&s.focus.length) focus=new Set(s.focus.filter(f=>CB[f]));
+    if(Array.isArray(s.taken)) taken=new Set(s.taken.filter(t=>BY[t]));
+    ["starHC","starMKT","starSE"].forEach(k=>{ if(typeof s[k]==="boolean") $(k).checked=s[k]; });
+  }
+}catch(e){}
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify({plan:[...plan],focus:[...focus],taken:[...taken],starHC:$("starHC").checked,starMKT:$("starMKT").checked,starSE:$("starSE").checked})); }catch(e){} }
+
+const counts=(c,set)=>Object.entries(c.roles).filter(([k,r])=>!WEAK.has(r)&&(!set||set.has(k))).length;
+const fCount=c=>counts(c,focus);
+function have(){ // all codes taken or planned (unique)
+  const s=new Set([...plan].map(k=>k.split("@")[0]));
+  taken.forEach(t=>s.add(BY[t].same||t));
+  return s;
+}
+function tagsHTML(c){
+  const solid=[],also=[];
+  for(const conc of CONC){
+    const r=c.roles[conc.id]; if(!r) continue;
+    if(focus.has(conc.id)){
+      const lab=ROLE[conc.id][r]||"";
+      const weak=WEAK.has(r)||LIMITED[conc.id]===r;
+      solid.push('<span class="tag'+(weak?' weak':'')+'" style="--c:'+conc.c+'">'+conc.ab+(lab?' · '+lab:'')+'</span>');
+    } else if(!WEAK.has(r)) also.push(conc.ab);
+  }
+  return solid.join("")+(also.length?'<span class="also">Also counts for '+also.join(", ")+'</span>':'');
+}
+function stripe(c){
+  const cols=CONC.filter(x=>c.roles[x.id]&&!WEAK.has(c.roles[x.id])&&focus.has(x.id)).map(x=>x.c);
+  if(!cols.length) cols.push("var(--line)");
+  return '<span class="stripe">'+cols.map(x=>'<i style="background:'+x+'"></i>').join("")+'</span>';
+}
+function visible(c,slot){
+  if($("planOnly").checked && !plan.has(c.code+"@"+slot)) return false;
+  if($("focusOnly").checked && !Object.keys(c.roles).some(k=>focus.has(k))) return false;
+  if($("multiOnly").checked && fCount(c)<2) return false;
+  return true;
+}
+function card(c,slot){
+  const key=c.code+"@"+slot, on=plan.has(key);
+  const other=c.slots.filter(s=>s!==slot).map(s=>SLOTS[s]);
+  const dup=[...plan].filter(k=>k!==key&&k.startsWith(c.code+"@")).map(k=>SLOTS[k.split("@")[1]]);
+  const n=fCount(c), tot=counts(c);
+  return '<button type="button" class="card" aria-pressed="'+on+'" data-key="'+key+'">'+stripe(c)+
+    '<span class="top"><span class="mono">MBA '+c.disp+'</span>'+(n>=2?'<span class="multi">'+n+' of your picks</span>':'')+'<span class="pick" aria-hidden="true">✓</span></span>'+
+    '<span class="name">'+c.name+'</span>'+
+    '<span class="tags">'+tagsHTML(c)+'</span>'+
+    (other.length?'<span class="note">Also offered: '+other.join(", ")+'</span>':'')+
+    (c.note?'<span class="note">'+c.note+'</span>':'')+
+    (dup.length&&on?'<span class="warn">Also in your plan for '+dup.join(", ")+'. It only counts once.</span>':'')+
+  '</button>';
+}
+function sorter(slot){ return (a,b)=>fCount(b)-fCount(a)||(plan.has(b.code+"@"+slot)-plan.has(a.code+"@"+slot))||counts(b)-counts(a)||a.disp.localeCompare(b.disp); }
+function cell(slot){
+  const list=COURSES.filter(c=>c.slots.includes(slot)&&visible(c,slot)).sort(sorter(slot));
+  const nPlan=[...plan].filter(k=>k.endsWith("@"+slot)).length;
+  return '<div class="cell" data-label="'+SLOTS[slot]+'">'+
+    '<div class="cellmeta"><span>'+list.length+' shown</span><span class="pill">'+nPlan+' in plan</span></div>'+
+    (CORE[slot]?'<div class="core">'+CORE[slot]+'</div>':'')+
+    (list.length?'<div class="cards">'+list.map(c=>card(c,slot)).join("")+'</div>':'<div class="empty">No courses match these filters.</div>')+
+  '</div>';
+}
+function starTags(){
+  const t=['<span class="tag" style="--c:'+CB.con.c+'">CON · required</span>','<span class="tag" style="--c:'+CB.mpo.c+'">MPO · counts as 2 electives</span>'];
+  if($("starHC").checked) t.push('<span class="tag" style="--c:'+CB.hc.c+'">HC · 4.5 cr</span>');
+  if($("starMKT").checked) t.push('<span class="tag weak" style="--c:'+CB.mkt.c+'">MKT · other area, needs approval</span>');
+  if($("starSE").checked) t.push('<span class="tag" style="--c:'+CB.se.c+'">SE · if approved</span>');
+  return t.join("");
+}
+function renderGrid(){
+  const y1n=[...plan].filter(k=>/@y1m[34]$/.test(k)).length;
+  const cls=y1n>4?"over":(y1n>=3?"okp":"");
+  $("grid").innerHTML=
+    '<div></div><div class="colhead">Mod III</div><div class="colhead">Mod IV</div>'+
+    '<div class="rowhead"><b>Y1</b><span class="pill '+cls+'" title="STAR guidance: 3–4 other courses across Mod III and IV">'+y1n+' / 3–4</span></div>'+
+    '<div class="star"><b>STAR Project Leader</b><span class="mono">MBA 880P + 880A · 6 cr · Mod III–IV</span>'+starTags()+'</div>'+
+    '<div></div>'+cell("y1m3")+cell("y1m4")+
+    '<div class="rowhead"><b>Y2</b></div>'+cell("y2m3")+cell("y2m4");
+  $("grid2").innerHTML='<div></div><div class="colhead">Mod I</div><div class="colhead">Mod II</div><div class="rowhead"><b>Y2</b></div>'+cell("y2m1")+cell("y2m2");
+  const un=COURSES.filter(c=>!c.slots.length&&!c.past&&(!$("focusOnly").checked||Object.keys(c.roles).some(k=>focus.has(k))));
+  $("unsched").innerHTML=un.length?un.map(c=>'<div class="card" style="cursor:default">'+stripe(c)+'<span class="top"><span class="mono">MBA '+c.disp+'</span></span><span class="name">'+c.name+'</span><span class="tags">'+tagsHTML(c)+'</span><span class="note">Check the course catalog for timing</span></div>').join(""):'<div class="empty">None for your picks.</div>';
+}
+
+/* ---------- requirement rules ---------- */
+const L=(ok,t)=>[ok,t];
+function list(codes){ return codes.length?codes.join(", "):"none yet"; }
+function rules(H){
+  const has=c=>H.has(c);
+  const pick=(id,pred)=>[...H].filter(c=>BY[c]&&BY[c].roles[id]&&(!pred||pred(BY[c].roles[id],BY[c])));
+  const disp=a=>a.map(c=>BY[c].disp);
+  const credits=a=>a.reduce((s,c)=>s+BY[c].cr,0);
+  const R={};
+  { const e=pick("hc"); const st=$("starHC").checked?4.5:0; const cr=credits(e)+st;
+    R.hc={rule:"9 credits from the Healthcare list",big:cr.toFixed(1)+" / 9 cr",pct:cr/9,checks:[L(st>0,"STAR Healthcare: "+(st?"4.5 cr":"not counted")),L(e.length>0,"Electives: "+list(disp(e))),L(cr>=9,cr>=9?"9 credits reached":"Need "+(9-cr).toFixed(1)+" more cr")]}; }
+  { const core=pick("mkt",r=>r==="e"); const oth=disp(pick("mkt",r=>r==="l")); if($("starMKT").checked) oth.unshift("STAR");
+    const n=core.length+Math.min(2,oth.length);
+    R.mkt={rule:"Marketing Core + 7 electives (max 2 from other areas)",big:n+" / 7",pct:n/7,checks:[L(true,"Marketing Core (MBA 741): done in Mod I"),L(core.length>0,"Marketing electives: "+list(disp(core))),L(oth.length>0,"Other areas: "+(oth.length?oth.join(", ")+(oth.length>2?" (only 2 count)":""):"none")),L(n>=7,n>=7?"Complete":"Need "+(7-n)+" more")]}; }
+  { const hr=pick("con",r=>r==="hr"||r==="hra"), an=pick("con",r=>r==="hra");
+    const steps=[has("826B"),true,has("826D"),hr.length>=2,an.length>=1]; const n=steps.filter(Boolean).length;
+    R.con={rule:"ICSF + ACSF + STAR, plus 2 Highly Recommended electives (1 analytics)",big:n===5?"Complete":n+" / 5 parts",pct:n/5,checks:[L(has("826B"),"Intro to Consulting Skills (826B)"),L(true,"STAR: Y1 Mod III–IV"),L(has("826D"),"Advanced Consulting Skills (826D)"),L(hr.length>=2,"Highly Recommended: "+list(disp(hr))),L(an.length>=1,"Analytics: "+(an.length?disp(an).join(", "):"pick 742, 704 or 706A"))]}; }
+  { const reqs=[["715 (core)",true],["705",has("705")],["706",has("706")],["742 or 743",has("742")||has("743")]];
+    const usedReq=new Set(["705","706"]); if(has("742")) usedReq.add("742"); else if(has("743")) usedReq.add("743");
+    const el=pick("bams").filter(c=>!usedReq.has(c)&&BY[c].roles.bams);
+    const rd=reqs.filter(r=>r[1]).length, n=rd+Math.min(4,el.length);
+    R.bams={rule:"4 required courses + 4 electives",big:n+" / 8",pct:n/8,checks:[...reqs.map(r=>L(r[1],"Required: "+r[0])),L(el.length>=4,"Electives: "+list(disp(el))+" ("+Math.min(4,el.length)+"/4)")]}; }
+  { const core=["720","750","753A"].map(c=>[c,has(c)]); const el=pick("tipm",r=>r==="e"); const n=core.filter(x=>x[1]).length+Math.min(5,el.length);
+    R.tipm={rule:"3 core courses + 5 electives",big:n+" / 8",pct:n/8,checks:[...core.map(([c,ok])=>L(ok,"Core: MBA "+c+(c==="750"?" (Mod II)":""))),L(el.length>=5,"Electives: "+list(disp(el))+" ("+Math.min(5,el.length)+"/5)")]}; }
+  { const el=pick("mpo"); const n=2+el.length;
+    R.mpo={rule:"Leading & Managing + 6 electives (STAR Project Leader counts as 2)",big:Math.min(n,6)+" / 6",pct:n/6,checks:[L(true,"Leading & Managing (801): Y1 Mod IV core"),L(true,"STAR Project Leader: 2 electives"),L(el.length>0,"Other electives: "+list(disp(el))),L(n>=6,n>=6?"Complete":"Need "+(6-n)+" more")]}; }
+  { const cl=r=>pick("om",x=>x===r); const g=cl("g"),a=cl("a"),p=cl("p"),o=cl("l"); const clN=g.length+a.length+p.length; const n=clN+Math.min(2,o.length);
+    R.om={rule:"6 courses: 4+ from the clusters (1+ from each), max 2 others",big:Math.min(n,6)+" / 6",pct:Math.min(1,n/6)*((g.length&&a.length&&p.length)?1:.85),checks:[L(g.length>0,"Global cluster: "+list(disp(g))),L(a.length>0,"Analytics cluster: "+list(disp(a))),L(p.length>0,"Application cluster: "+list(disp(p))),L(clN>=4,"Cluster courses: "+clN+" / 4"),L(o.length>0,"Other (max 2): "+list(disp(o)))]}; }
+  { const f=pick("ent",r=>r==="f"), e=pick("ent",r=>r==="e"); const n=f.length+e.length;
+    R.ent={rule:"6 courses, at least 1 foundation course",big:Math.min(n,6)+" / 6",pct:Math.min(1,n/6),checks:[L(f.length>0,"Foundation: "+(f.length?disp(f).join(", "):"pick 835, 846J, 849A or 849B")),L(e.length>0,"Electives: "+list(disp(e))),L(n>=6&&f.length>0,n>=6?"Complete":"Need "+(6-n)+" more")]}; }
+  { const hr=pick("cf",r=>r==="hr"); const oth=pick("cf",r=>r==="l"); let reCr=0,othCr=0,othN=0;
+    for(const c of oth){ const k=BY[c]; if(k.re){ if(reCr+k.cr>3) continue; reCr+=k.cr; } if(othCr+k.cr>6) continue; othCr+=k.cr; othN++; }
+    const n=hr.length+othN;
+    R.cf={rule:"7 courses (10.5 cr), 3+ Highly Recommended, max 6 cr others",big:Math.min(n,7)+" / 7",pct:Math.min(1,n/7)*(hr.length>=3?1:.9),checks:[L(hr.length>=3,"Highly Recommended: "+list(disp(hr))+" ("+hr.length+"/3)"),L(othN>0,"Other approved: "+list(disp(oth))),L(n>=7&&hr.length>=3,n>=7?"Complete":"Need "+(7-n)+" more")]}; }
+  { const y1=(has("792A")||has("792B"))&&has("792C"); const path=["774","783","791","794","797"].filter(has); const aim=has("779"); const oth=pick("cmi",r=>r==="o").concat(has("793A")?["793A"]:[]);
+    const t1=((y1?1:0)+(aim?1:0)+(path.length?1:0))/3, t2=((y1?1:0)+path.length/5*1+(oth.length?1:0))/3;
+    R.cmi={rule:"Investments I & II, then Track I (AIM + 1 pathway course) or Track II (all 5 pathway + 1 other)",big:Math.round(Math.max(t1,t2)*100)+"%",pct:Math.max(t1,t2),checks:[L(y1,"Investments I (792A/B) + II (792C)"),L(aim,"AIM (779) for Track I"),L(path.length>=1,"Pathway electives: "+list(disp(path))+" ("+path.length+"/5)"),L(oth.length>0,"Other elective or PRIME: "+list(disp(oth)))]}; }
+  { const e=pick("ene"); const core=e.filter(c=>BY[c].roles.ene==="c"); const cr=credits(e);
+    R.ene={rule:"9 credits; Intro to the Energy Value Chain suggested; 4.5 cr from core suggested",big:cr.toFixed(1)+" / 9 cr",pct:cr/9,checks:[L(has("790B"),"Gateway: Intro to the Energy Value Chain (790B)"),L(credits(core)>=4.5,"Core electives: "+credits(core).toFixed(1)+" / 4.5 cr"),L(cr>=9,cr>=9?"Complete":"Need "+(9-cr).toFixed(1)+" more cr")]}; }
+  { const e=pick("se",r=>r==="e"); const st=$("starSE").checked?4.5:0; const cr=credits(e)+st;
+    R.se={rule:"Strategy & Sustainability (ethics core) + 9 elective credits",big:cr.toFixed(1)+" / 9 cr",pct:(cr/9)*(has("831C")?1:.9),checks:[L(has("831C"),"Strategy & Sustainability (831C) as your ethics core"),L(st>0,"Sustainability STAR: "+(st?"4.5 cr":"not counted")),L(e.length>0,"Electives: "+list(disp(e))),L(cr>=9,cr>=9?"Complete":"Need "+(9-cr).toFixed(1)+" more cr")]}; }
+  { const both=["852","851","852B","853D","853B","853E"]; const dev=[...both,"854B","854"], fin=[...both,"854A","853C"];
+    const dd=dev.filter(has).length, ff=fin.filter(has).length; const best=dd>=ff?["Development",dev,dd]:["Finance & Investment",fin,ff];
+    R.re={rule:"Every course in one track (Development or Finance & Investment)",big:best[2]+" / 8",pct:best[2]/8,checks:[L(dd===8,"Development track: "+dd+" / 8"),L(ff===8,"Finance track: "+ff+" / 8"),L(false,"Missing for "+best[0]+": "+(best[1].filter(c=>!has(c)).join(", ")||"nothing"))].map((x,i)=>i===2?L(best[2]===8,x[1]):x)}; }
+  return R;
+}
+function renderTracker(){
+  const R=rules(have());
+  $("tracker").innerHTML=CONC.filter(c=>focus.has(c.id)).map(c=>{
+    const r=R[c.id]; const pct=Math.max(0,Math.min(100,r.pct*100));
+    return '<div class="req" style="--c:'+c.c+'"><h3>'+c.name+' <span class="big">'+r.big+'</span></h3>'+
+      '<div class="bar"><i style="width:'+pct+'%"></i></div>'+
+      '<div class="also">'+r.rule+'</div>'+
+      '<ul class="checks">'+r.checks.map(([ok,t])=>'<li><span class="d '+(ok?"y":"n")+'">'+(ok?"✓":"○")+'</span><span>'+t+'</span></li>').join("")+'</ul></div>';
+  }).join("");
+}
+function renderFocus(){
+  $("focus").innerHTML=CONC.map(c=>'<button type="button" class="fchip" style="--c:'+c.c+'" data-f="'+c.id+'" aria-pressed="'+focus.has(c.id)+'"><span class="dot"></span>'+c.name+'</button>').join("");
+  $("taken").innerHTML=PAST.map(c=>'<button type="button" class="fchip" style="--c:var(--accent)" data-t="'+c.code+'" aria-pressed="'+taken.has(c.code)+'">MBA '+c.disp+' '+c.name.replace(" (Y1)","")+'</button>').join("");
+}
+function renderHeat(){
+  const real=COURSES.filter(c=>!(c.past&&c.same));
+  const cnt=(a,b)=>real.filter(c=>c.roles[a]&&!WEAK.has(c.roles[a])&&c.roles[b]&&!WEAK.has(c.roles[b])).length;
+  let max=0; const M={}; for(const a of CONC) for(const b of CONC){ const v=cnt(a.id,b.id); M[a.id+b.id]=v; if(a!==b&&v>max) max=v; }
+  let h='<tr><th></th>'+CONC.map(c=>'<th title="'+c.name+'" style="color:'+(focus.has(c.id)?c.c:"")+'">'+c.ab+'</th>').join("")+'</tr>';
+  for(const a of CONC){
+    h+='<tr><th class="rh" style="color:'+(focus.has(a.id)?a.c:"")+'">'+a.name+'</th>';
+    for(const b of CONC){
+      const v=M[a.id+b.id], diag=a===b; const t=diag?.35:(max?v/max:0);
+      const bg=v?'color-mix(in srgb, var(--accent) '+Math.round(8+t*72)+'%, var(--surface))':'var(--bg)';
+      const fg=t>.55&&!diag?'#fff':'var(--ink)';
+      h+='<td class="'+(diag?'diag':'')+'"><button type="button" data-pair="'+a.id+','+b.id+'" style="background:'+bg+';color:'+fg+'" title="'+(diag?a.name+': '+v+' courses count':v+' courses count for both '+a.name+' and '+b.name)+'">'+(v||"")+'</button></td>';
+    }
+    h+='</tr>';
+  }
+  $("heat").innerHTML=h;
+}
+function renderMatrix(){
+  const H=have();
+  const rows=COURSES.filter(c=>!(c.past&&c.same)).sort((a,b)=>fCount(b)-fCount(a)||counts(b)-counts(a)||a.disp.localeCompare(b.disp));
+  let h='<thead><tr><th>Course</th>'+CONC.map(c=>'<th class="c'+(focus.has(c.id)?' on':'')+'" title="'+c.name+'">'+c.ab+'</th>').join("")+'<th class="c">Picks</th><th>Offered</th><th>Plan</th></tr></thead><tbody>';
+  for(const c of rows){
+    const ip=[...plan].filter(k=>k.startsWith(c.code+"@")).map(k=>SLOTS[k.split("@")[1]]);
+    h+='<tr><td><span class="mono">'+c.disp+'</span> '+c.name+'</td>'+CONC.map(x=>{const r=c.roles[x.id]; return '<td class="c'+(focus.has(x.id)?' on':'')+'">'+(r?'<span class="dt'+(WEAK.has(r)?' weak':'')+'" style="--c:'+x.c+'" title="'+x.name+(ROLE[x.id][r]?' · '+ROLE[x.id][r]:'')+'"></span>':'')+'</td>';}).join("")+
+      '<td class="n">'+(fCount(c)||"")+'</td><td class="slots">'+(c.past?"Y1 Mod I–II":(c.slots.length?c.slots.map(s=>SLOTS[s].replace(" Mod "," ")).join(" · "):"not listed"))+'</td><td>'+(c.past?(taken.has(c.code)?"Taken":""):(ip.length?ip.join(", "):""))+'</td></tr>';
+  }
+  $("matrix").innerHTML=h+'</tbody>';
+}
+function render(){ renderFocus(); renderTracker(); renderGrid(); renderHeat(); renderMatrix(); }
+
+document.addEventListener("click",e=>{
+  const card=e.target.closest("button.card");
+  if(card){ const k=card.dataset.key; plan.has(k)?plan.delete(k):plan.add(k); save(); render(); const a=document.querySelector('.card[data-key="'+k+'"]'); if(a) a.focus(); return; }
+  const f=e.target.closest("[data-f]");
+  if(f){ const id=f.dataset.f; if(focus.has(id)){ if(focus.size>1) focus.delete(id); } else focus.add(id); save(); render(); const a=document.querySelector('[data-f="'+id+'"]'); if(a) a.focus(); return; }
+  const t=e.target.closest("[data-t]");
+  if(t){ const id=t.dataset.t; taken.has(id)?taken.delete(id):taken.add(id); save(); render(); return; }
+  const p=e.target.closest("[data-pair]");
+  if(p){ focus=new Set(p.dataset.pair.split(",")); save(); render(); $("focus-h").scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"}); return; }
+});
+["focusOnly","multiOnly","planOnly"].forEach(id=>$(id).addEventListener("change",renderGrid));
+["starHC","starMKT","starSE"].forEach(id=>$(id).addEventListener("change",()=>{save();render();}));
+$("resetPlan").addEventListener("click",()=>{ plan=new Set(SUGGESTED); save(); render(); $("copyMsg").textContent="Back to the suggested plan"; });
+$("copyPlan").addEventListener("click",async()=>{
+  let out="STAR Project Leader: Y1 Mod III–IV\n";
+  for(const s of Object.keys(SLOTS)){ const ks=[...plan].filter(k=>k.endsWith("@"+s)); if(ks.length) out+=SLOTS[s]+": "+ks.map(k=>{const c=BY[k.split("@")[0]];return "MBA "+c.disp+" "+c.name;}).join("; ")+"\n"; }
+  try{ await navigator.clipboard.writeText(out); $("copyMsg").textContent="Copied"; }catch(err){ $("copyMsg").textContent="Your browser blocked copying"; }
+});
+render();
+</script>
+</body>
+</html>

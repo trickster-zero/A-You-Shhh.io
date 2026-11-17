@@ -2,7 +2,21 @@
   {
     "title": "Job Search Tracker",
     "description": "A Python scraper that pulls roles from multiple sources into a local dashboard.",
-    "tags": ["Python", "Automation", "HTML"],
+    "tags": [
+      "Python",
+      "Automation",
+      "HTML"
+    ],
     "link": "https://github.com/trickster-zero/job-tracker"
+  },
+  {
+    "title": "Kenan-Flagler Elective Map",
+    "description": "Interactive planner that maps 100+ UNC Kenan-Flagler MBA electives across all 13 concentrations, with live requirement tracking, an overlap heatmap, and a course-by-concentration matrix.",
+    "tags": [
+      "HTML",
+      "JavaScript",
+      "Data Viz"
+    ],
+    "link": "kf-elective-map/"
   }
 ]
