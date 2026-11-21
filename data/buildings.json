@@ -53,14 +53,12 @@
   {
     "id": "armory",
     "label": "Workshop",
-    "description": "Tools, games, and extensions built after hours.",
-    "href": "builds.html",
-    "status": "open",
-    "hotspot": {
-      "x": 64.8,
-      "y": 13.7,
-      "w": 19.2,
-      "h": 22.0
+    "description": "Tools, games, and extensions, coming soon.",
+    "href": null,
+    "status": "locked",
+    "hotspot": { "x": 64.8, "y": 13.7, "w": 19.2, "h": 22.0 },
+    
+    "pin": { "x": 74.2, "y": 16.5 }
     },
     "pin": {
       "x": 74.2,
