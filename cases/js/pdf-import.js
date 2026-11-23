@@ -72,7 +72,7 @@ export function findGutter(items, W) {
     for (let x = a; x <= b; x++) cover[x]++;
   }
   const lo = Math.floor(W * 0.2), hi = Math.ceil(W * 0.8);
-  const limit = Math.max(1, Math.floor(items.length * 0.04));      // a few full-width headings may cross it
+  const limit = Math.max(1, Math.floor(items.length * 0.02));      // a heading or two may cross it
   let best = null, start = -1;
   for (let x = lo; x <= hi + 1; x++) {
     const open = x <= hi && cover[x] <= limit;
@@ -101,17 +101,44 @@ function fitsGutter(items, g) {
   return l > 0 && r > 0;
 }
 
-/** Groups items into lines by baseline, then joins each line left to right. */
+/** "S U R F A C E" -> "SURFACE": undoes letter-spaced headings, which PDFs often store with a space per letter. */
+export function unspace(str) {
+  const parts = str.trim().split(' ');
+  return parts.length >= 2 && parts.every(p => p.length === 1) ? parts.join('') : str;
+}
+
+/**
+ * Groups items into lines by baseline, then joins each line left to right.
+ * A wide horizontal gap starts a separate line, so side-by-side blocks on one baseline don't merge.
+ */
 export function groupLines(items) {
-  const sorted = [...items].sort((a, b) => a.y - b.y || a.x - b.x);
+  // Some PDFs draw a word twice in the same spot (a faux-bold effect). Keep one copy.
+  const seen = new Set();
+  const unique = items.filter(it => {
+    const k = `${it.str}|${Math.round(it.x / 2)}|${Math.round(it.y / 2)}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const sorted = unique.map(it => ({ ...it, str: unspace(it.str) })).sort((a, b) => a.y - b.y || a.x - b.x);
   const lines = [];
   for (const it of sorted) {
     const cur = lines[lines.length - 1];
     if (cur && Math.abs(cur.y - it.y) <= Math.max(2, 0.45 * Math.min(cur.h, it.h))) cur.items.push(it);
     else lines.push({ y: it.y, h: it.h, items: [it] });
   }
-  return lines.map(l => {
+  const segments = [];
+  for (const l of lines) {
     const parts = l.items.sort((a, b) => a.x - b.x);
+    let seg = [parts[0]];
+    for (let i = 1; i < parts.length; i++) {
+      const gap = parts[i].x - (parts[i - 1].x + parts[i - 1].w);
+      if (gap > Math.max(40, parts[i].h * 4)) { segments.push(seg); seg = [parts[i]]; }
+      else seg.push(parts[i]);
+    }
+    segments.push(seg);
+  }
+  return segments.map(parts => {
     let text = '', end = null;
     for (const it of parts) {
       if (end !== null && it.x - end > it.h * 0.15 && !text.endsWith(' ') && !it.str.startsWith(' ')) text += ' ';
@@ -145,6 +172,8 @@ function chooseSide(L, R, leftItems, rightItems, pref) {
  * A line in the top 8% or bottom 7% of a page goes if it is a bare page number, if the same text
  * (digits ignored) sits in that band on at least 40% of pages, or if it repeats the band text of the page before.
  */
+const CASE_MARKER = /^\s*\d[\d\s]{0,4}\|\s*c\s?a\s?s\s?e\b|^case\s*\d/i;
+
 export function stripRunning(pages) {
   const norm = t => t.toLowerCase().replace(/\d+/g, '#').replace(/\s+/g, ' ').trim();
   const inBand = (l, p) => l.y < p.height * 0.08 || l.y > p.height * 0.93;
@@ -155,12 +184,15 @@ export function stripRunning(pages) {
   }
   const min = Math.max(2, Math.ceil(pages.length * 0.4));
   let prevBand = new Set();
+  const markers = new Set();
   return pages.map(p => {
     const band = new Set(p.lines.filter(l => inBand(l, p)).map(l => norm(l.text)));
     const lines = p.lines.filter(l => {
       if (!inBand(l, p)) return true;
       const k = norm(l.text);
       if (PAGE_NO_RE.test(l.text.trim())) return false;
+      // A running "N | CASE: TITLE" header marks where a case starts, so its first appearance stays.
+      if (CASE_MARKER.test(l.text) && !markers.has(l.text.toLowerCase())) { markers.add(l.text.toLowerCase()); return true; }
       if (pages.length > 1 && (counts.get(k) || 0) >= min) return false;
       if (prevBand.has(k)) return false;                       // case-level running header: keep only the first
       return true;

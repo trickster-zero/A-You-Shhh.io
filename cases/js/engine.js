@@ -87,7 +87,7 @@ export function dispatch(c, prev, action) {
           const shown = new Set(s.rows[q.n] || []);
           for (const r of hits) shown.add(r.i);
           s.rows[q.n] = [...shown].sort((x, y) => x - y);
-          say(s, out, hits.map(r => `${r.label}: ${r.value}`).join('. '), 'data');
+          say(s, out, hits.map(r => (r.value ? `${r.label}: ${r.value}` : r.label)).join('\n'), 'data');
           break;
         }
       }
@@ -141,7 +141,7 @@ export function dispatch(c, prev, action) {
       if (s.stage !== 'behavioral') break;
       const text = String(a.text || '').trim();
       if (a.type === 'submitBehavioral') { if (!text) break; s.answers.behavioral = text; you(s, text, 'behavioral'); }
-      toRecommendation(s, out);
+      toRecommendation(s, out, c);
       break;
     }
     case 'submitRecommendation': {
@@ -182,19 +182,20 @@ function advanceToQuestion(c, s, out, i) {
   if (i < c.questions.length) {
     const q = c.questions[i];
     s.stage = 'question'; s.qi = i; s.phase = 'ask';
-    say(s, out, `Question ${q.n}. ${q.text || '(No question text was found in the PDF.)'}`, 'question');
+    say(s, out, `${labelOf(q)}. ${q.text || '(No question text was found in the PDF.)'}`, 'question');
     showExhibits(c, s, out, q.n);
   } else if (c.behavioral) {
     s.stage = 'behavioral'; s.qi = -1; s.phase = null;
     say(s, out, c.behavioral, 'behavioral');
   } else {
-    toRecommendation(s, out);
+    toRecommendation(s, out, c);
   }
 }
-function toRecommendation(s, out) {
+function toRecommendation(s, out, c) {
   s.stage = 'recommendation'; s.qi = -1; s.phase = null;
-  say(s, out, 'Please give your recommendation.', 'cue');
+  say(s, out, c?.conclusion || 'Please give your recommendation.', 'cue');
 }
+const labelOf = q => q.label || `Question ${q.n}`;
 function showExhibits(c, s, out, stage) {
   for (const e of c.exhibits || []) {
     if (e.stage !== stage || s.exhibitsShown.includes(e.n)) continue;
@@ -230,11 +231,11 @@ export function view(c, s) {
   const v = {
     case: { id: c.id, title: c.title, caseNumber: c.caseNumber, industry: c.industry, type: c.type, difficulty: c.difficulty ?? null },
     stage: s.stage, mode: s.mode, phase: s.phase,
-    progress: { index: s.qi, total: c.questions.length, numbers: c.questions.map(x => x.n) },
+    progress: { index: s.qi, total: c.questions.length, numbers: c.questions.map(x => x.n), labels: c.questions.map(labelOf) },
     hasBehavioral: !!c.behavioral,
     log: s.log.map(e => ({ ...e })),
     current: q ? {
-      n: q.n,
+      n: q.n, label: labelOf(q),
       hintsLeft: Math.max(0, (q.hints || []).length - (s.hints.q[q.n] || 0)),
       hintsUsed: s.hints.q[q.n] || 0,
       canAskData: (q.framework || []).some(r => r.givenOnRequest)
@@ -249,7 +250,7 @@ export function view(c, s) {
       framework: s.answers.framework,
       frameworkHints: s.hints.framework,
       questions: c.questions.map(x => ({
-        n: x.n, text: x.text, yourAnswer: s.answers.q[x.n] || '',
+        n: x.n, label: labelOf(x), text: x.text, yourAnswer: s.answers.q[x.n] || '',
         hintsUsed: s.hints.q[x.n] || 0,
         rubric: Object.fromEntries(RUBRIC.map(k => [k, !!s.rubric[x.n]?.[k]]))
       })),
@@ -262,7 +263,7 @@ export function view(c, s) {
       clarifyingFacts: (c.clarifyingFacts || []).map(f => ({ q: f.q, a: f.a })),
       frameworkHint: c.frameworkHint || '',
       questions: c.questions.map(x => ({
-        n: x.n, text: x.text, answer: x.answer, hints: [...(x.hints || [])], transition: x.transition || '', notes: x.notes || '',
+        n: x.n, label: labelOf(x), text: x.text, answer: x.answer, hints: [...(x.hints || [])], transition: x.transition || '', notes: x.notes || '',
         framework: (x.framework || []).map(r => ({ label: r.label, value: r.value, givenOnRequest: !!r.givenOnRequest }))
       })),
       behavioral: c.behavioral || '', recommendation: c.recommendation || '', recap: c.recap || '',

@@ -27,6 +27,18 @@ What the parser looks for (case-insensitive):
 | Exhibits | a page that starts with `Exhibit N` (shown as an image) |
 | Other | `Behavioral Question`, `Recommendation`, `Recap` or `Teaching` |
 
+Slide-style casebooks are handled too:
+
+- a running header such as `01 | CASE: TITLE` (also letter-spaced, like `C A S E`) starts a case
+- `Question 1 (any note)` and later pages for the same question (`Question 1 Calculations`)
+- guidance headings such as `Exhibit or Question Guidance:`, `Question 2 Guidance:`, `Best candidates:`
+- `Provide if asked:` lists become figures you can mark as given on request
+- `Framework Guidance:` and `How to Move Forward:` become the framework hint
+- other named stages (`BRAINSTORMING`, `OTHER OPTIONS`) become extra steps with their own names
+- `CONCLUSION` gives the question that leads into the recommendation; `Risks:` and `Next Steps:` join it
+- an `INTERVIEWER FEEDBACK FORM` page ends the case
+- clarifying facts written as `Topic: fact` as well as `question? answer`
+
 If your casebook uses different words, edit the patterns in `HEADINGS` at the top of `js/parser.js`.
 
 ## Tag a case

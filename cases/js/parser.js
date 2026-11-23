@@ -7,23 +7,29 @@ const head = words => new RegExp(`^(?:${words})\\s*(?:[:\\-–—]\\s*(.*))?$`, 
 
 export const HEADINGS = {
   caseStart: /^case\s*(?:#|no\.?)?\s*(\d{1,3})\s*(?:[:.\-–—|]\s*(.*))?$/i,
-  subtitle: /^([^|]{2,60}?)\s*\|\s*([^|]{2,60})$/,
-  question: /^question\s*(\d{1,2})\s*(?:[:.)\-–—]\s*(.*))?$/i,
-  exhibit: /^exhibit\s*(\d{1,2})\s*(?:[:.\-–—]\s*(.*))?$/i,
+  caseHeader: /^(\d\s?\d?\s?\d?)\s*\|\s*c\s?a\s?s\s?e\s*[:\-–—]\s*(.*)$/i,                 // running header "01 | CASE: TITLE"
+  subtitle: /^([^|•]{2,60}?)\s*\|\s*([^|•]{2,60}?)\s*(?:[•●▪].*)?$/,
+  question: /^question\s*(\d{1,2})\b\s*[:.)\-–—]?\s*(.*)$/i,
+  exhibit: /^exhibit\s*(\d{1,2})\b\s*[:.)\-–—]?\s*(.*)$/i,
+  stage: /^(brainstorm(?:ing)?|other options|additional (?:questions?|analysis)|synthesis|creative questions?|curveball)\s*:?$/i,
+  conclusion: head('conclusion|wrap[- ]up|final question'),
+  end: /^(interviewer feedback form|feedback form|interviewer evaluation|case feedback)\b/i,
   prompt: head('(?:case\\s+)?prompt|problem statement|case statement'),
   clarifying: head('clarifying (?:information|questions?|facts)'),
-  behavioral: head('behaviou?ral(?: question)?|fit question'),
-  frameworkHint: head('(?:suggested |possible |sample )?(?:framework|structure)'),
-  answer: head('(?:sample )?answers?|solution'),
+  behavioral: head('behaviou?ral(?: interview)?(?: questions?)?|fit questions?'),
+  frameworkHint: head('(?:suggested |possible |sample )?(?:framework|structure)(?: guidance)?|how to move forward'),
+  answer: head('(?:sample )?answers?|solution|(?:exhibit or )?question guidance|(?:question|exhibit)\\s*\\d{1,2}\\s+guidance|exhibit guidance|brainstorming guidance|guidance|best candidates?(?: (?:display|will|should))?|(?:sample )?calculations?'),
   hint: head('hints?'),
-  figures: head('figures|data|numbers|given (?:on request|if asked)|information to (?:give|provide)'),
+  figures: head('figures|data|numbers|given (?:on request|if asked)|information to (?:give|provide)|provide (?:this )?(?:only )?if (?:asked|requested)|if asked'),
   transition: head('transition'),
   recap: head('recap|case recap|teaching(?: notes| section)?|key takeaways'),
-  recommendation: head('(?:sample |final )?(?:recommendation|conclusion)s?')
+  recommendation: head('(?:sample |final )?recommendations?'),
+  recExtra: head('risks?|next steps?')
 };
 
 const CASE_KINDS = ['prompt', 'clarifying', 'behavioral', 'frameworkHint', 'recap', 'recommendation'];
 const QUESTION_KINDS = ['answer', 'hint', 'figures', 'transition'];
+const ALL_KINDS = [...QUESTION_KINDS, ...CASE_KINDS];      // guidance first: "Brainstorming Guidance" is guidance, not a stage
 const BULLET = /^\s*(?:[•●▪◦‣\-–*]|\d{1,2}[.)])\s+(.*)$/;
 const ROW = /^(.{1,60}?)\s*(?::|=|\s[–—-]\s)\s*(.+)$/;
 const INLINE_EXHIBIT = /\bexhibit\s*(\d{1,2})\b/gi;
@@ -33,8 +39,9 @@ export function isTitleLine(t) {
   return letters.length >= 3 && t.length <= 80 && t === t.toUpperCase() && /[A-Z]/.test(t) && !isHeading(t);
 }
 function isHeading(t) {
-  return HEADINGS.question.test(t) || HEADINGS.exhibit.test(t) || [...CASE_KINDS, ...QUESTION_KINDS].some(k => HEADINGS[k].test(t));
+  return HEADINGS.question.test(t) || HEADINGS.exhibit.test(t) || HEADINGS.conclusion.test(t) || HEADINGS.end.test(t) || HEADINGS.recExtra.test(t) || ALL_KINDS.some(k => HEADINGS[k].test(t));
 }
+const titleCase = t => t.toLowerCase().replace(/\b[a-z]/g, ch => ch.toUpperCase());
 
 /**
  * parseCasebook(pages, { source }) -> { cases, warnings }
@@ -42,27 +49,51 @@ function isHeading(t) {
  */
 export function parseCasebook(pages, { source = { id: 'local', name: 'casebook.pdf' } } = {}) {
   const lines = [];
-  for (const p of pages) for (const l of p.lines) lines.push({ text: l.text.trim(), col: l.col === 'side' ? 'side' : 'main', page: p.page, y: l.y, pageHeight: p.height });
+  for (const p of pages) {
+    let first = true;
+    for (const l of p.lines) {
+      const text = l.text.trim();
+      if (!text) continue;
+      lines.push({ text, col: l.col === 'side' ? 'side' : 'main', page: p.page, y: l.y, size: l.size || 10, pageHeight: p.height, pageFirst: first && l.col !== 'side' });
+      if (l.col !== 'side') first = false;
+    }
+  }
 
-  // Split into cases at "Case N" lines in the main column.
+  // A case starts at "Case N", at a running header "N | CASE: TITLE", or at an ALL CAPS title followed by "Industry | Type".
   const chunks = [];
   let cur = null;
-  for (const ln of lines) {
-    if (!ln.text) continue;
-    const m = ln.col === 'main' && ln.text.length <= 90 ? HEADINGS.caseStart.exec(ln.text) : null;
-    if (m) {
+  lines.forEach((ln, i) => {
+    let start = null;
+    if (ln.col === 'main' && ln.text.length <= 90) {
+      const h = HEADINGS.caseHeader.exec(ln.text) || HEADINGS.caseStart.exec(ln.text);
+      if (h) {
+        const number = String(+h[1].replace(/\s/g, ''));
+        if (cur && cur.number === number) return;                    // the same case's header on a later page
+        const letters = t => String(t).toLowerCase().replace(/[^a-z]/g, '');
+        if (cur && !cur.number && cur.titled && h[2] && (letters(cur.lines[0].text).includes(letters(h[2])) || letters(h[2]).includes(letters(cur.lines[0].text)))) {
+          cur.number = number;                                        // the case opened on a page without the header
+          return;
+        }
+        start = { number, rest: (h[2] || '').trim() };
+      } else if (isTitleLine(ln.text)) {
+        const next = lines.slice(i + 1, i + 3).find(l => l.col === 'main' && l.page === ln.page);
+        const fresh = cur && cur.page === ln.page && cur.lines.length < 4;
+        if (next && HEADINGS.subtitle.test(next.text) && !fresh) start = { number: null, rest: '', titled: true };
+      }
+    }
+    if (start) {
       const prev = cur?.lines[cur.lines.length - 1];
-      const pre = prev && prev.page === ln.page && isTitleLine(prev.text) ? cur.lines.pop() : null;
-      cur = { number: m[1], rest: (m[2] || '').trim(), pre, lines: [], page: ln.page };
+      const pre = !start.titled && prev && prev.page === ln.page && isTitleLine(prev.text) ? cur.lines.pop() : null;
+      cur = { ...start, pre, lines: start.titled ? [ln] : [], page: ln.page };
       chunks.push(cur);
-      continue;
+      return;
     }
     if (!cur) { cur = { number: null, rest: '', pre: null, lines: [], page: ln.page }; chunks.push(cur); }
     cur.lines.push(ln);
-  }
-  // Front matter before the first numbered case is dropped when it holds no questions.
-  const numbered = chunks.some(c => c.number);
-  const kept = chunks.filter(c => c.number || !numbered || c.lines.some(l => HEADINGS.question.test(l.text)));
+  });
+  // Front matter (introductions, industry overviews) holds no questions or prompt, so it is dropped.
+  const isCase = c => c.number || c.titled || c.lines.some(l => HEADINGS.question.test(l.text) || HEADINGS.prompt.test(l.text));
+  const kept = chunks.filter(isCase);
 
   const cases = kept.map(ch => parseCase(ch, source));
   const warnings = cases.flatMap(c => c.warnings.map(message => ({ caseId: c.id, title: c.title, message })));
@@ -76,77 +107,92 @@ export function parseCase(chunk, source = { id: 'local', name: '' }) {
     id: '', title: '', caseNumber: chunk.number || '', industry: '', type: '',
     difficulty: null, tags: {},
     prompt: '', clarifyingFacts: [], behavioral: '', frameworkHint: '',
-    questions: [], exhibits: [], recap: '', recommendation: '',
+    questions: [], exhibits: [], conclusion: '', recap: '', recommendation: '',
     source: { id: source.id, name: source.name, firstPage: chunk.page },
     warnings
   };
   const lines = chunk.lines.slice();
 
-  // Title: rest of the "Case N" line, the all-caps line just above it, or an all-caps line just below.
-  if (chunk.rest && !HEADINGS.subtitle.test(chunk.rest)) c.title = chunk.rest;
+  // Title: an ALL CAPS line followed by the subtitle, the rest of the case line, or an ALL CAPS line nearby.
+  const ti = lines.slice(0, 6).findIndex((l, i) => l.col === 'main' && isTitleLine(l.text) && HEADINGS.subtitle.test(lines[i + 1]?.text || ''));
+  if (ti >= 0) c.title = lines.splice(ti, 1)[0].text;
+  else if (chunk.rest && !HEADINGS.subtitle.test(chunk.rest)) c.title = chunk.rest;
   else if (chunk.pre) c.title = chunk.pre.text;
   else {
     const i = lines.slice(0, 4).findIndex(l => l.col === 'main' && isTitleLine(l.text));
     if (i >= 0) c.title = lines.splice(i, 1)[0].text;
   }
-  // Subtitle "Industry | Type"
+  if (!c.title && chunk.rest) c.title = chunk.rest;
   const si = lines.slice(0, 8).findIndex(l => HEADINGS.subtitle.test(l.text) && !HEADINGS.question.test(l.text));
-  if (si >= 0) {
-    const m = HEADINGS.subtitle.exec(lines.splice(si, 1)[0].text);
-    c.industry = m[1].trim();
-    c.type = m[2].trim();
-  } else if (chunk.rest && HEADINGS.subtitle.test(chunk.rest)) {
-    const m = HEADINGS.subtitle.exec(chunk.rest);
-    c.industry = m[1].trim(); c.type = m[2].trim();
-  }
+  const sub = si >= 0 ? lines.splice(si, 1)[0].text : (HEADINGS.subtitle.test(chunk.rest) ? chunk.rest : '');
+  if (sub) { const m = HEADINGS.subtitle.exec(sub); c.industry = m[1].trim(); c.type = m[2].trim(); }
 
   const sec = { main: null, side: null };
   const clar = [];
-  const exPages = new Map();     // n -> { page, stage }
+  const exPages = new Map();     // n -> { page, before: questions seen so far }
   const unassigned = [];
-  let q = null, skipPage = null;
+  let q = null, skipPage = null, ended = false;
 
+  const newQuestion = (num, label, text = '') => {
+    q = { n: num ?? 0, num, label, text, framework: [], answer: '', hints: [], transition: '', notes: '' };
+    c.questions.push(q);
+    return q;
+  };
+  const addRow = (row, sentence) => {
+    if (!row) return;
+    const key = `${row.label}|${row.value}`;
+    if (!q.framework.some(r => `${r.label}|${r.value}` === key)) q.framework.push(row);
+    if (sentence) row.sentence = true;
+  };
   const caseAppend = (kind, text, bullet) => {
     if (kind === 'clarifying') return clar.push(text);
-    c[kind] = joinText(c[kind], text, bullet);
+    if (kind === 'behavioral' && /^(interview|questions?:?)$/i.test(text)) return;       // split "Behavioral / Interview / Question:" heading
+    c[kind] = joinText(c[kind], kind === 'recommendation' && bullet ? `• ${text}` : text, bullet);
   };
   const qAppend = (kind, text, bullet, raw) => {
-    if (kind === 'answer') q.answer = joinText(q.answer, bullet ? `• ${text}` : text, bullet);
+    if (kind === 'answer') {
+      q.answer = joinText(q.answer, bullet ? `• ${text}` : text, bullet);
+      // Bulleted figures inside the guidance are offered as rows, so you can mark the ones given on request.
+      if (bullet && /\d/.test(text) && !/[=*×÷]/.test(text)) addRow(toRow(text) || { label: text, value: '', givenOnRequest: false, keywords: keywords(text) }, true);
+    }
     else if (kind === 'transition') q.transition = joinText(q.transition, text);
-    else if (kind === 'qtext') q.text = joinText(q.text, text);
+    else if (kind === 'qtext') q.text = joinText(q.text, bullet ? text : raw);
     else if (kind === 'hint') {
       if (bullet || !q.hints.length || sec._newHint) { q.hints.push(text); sec._newHint = false; }
       else q.hints[q.hints.length - 1] = joinText(q.hints[q.hints.length - 1], text);
     } else if (kind === 'figures') {
       const row = toRow(text);
-      if (row) q.framework.push(row);
+      if (row) addRow(row);
       else if (q.framework.length) q.framework[q.framework.length - 1].value = joinText(q.framework[q.framework.length - 1].value, text);
       else q.notes = joinText(q.notes, raw);
     }
   };
 
-  // Guidance can sit higher on the page than the question it belongs to. Question-level guidance in the
-  // side column is held back and given to the next question when there's no current question yet, or when
-  // the current one already has that section and another question starts further down the same page.
+  // Guidance can sit higher on the page than the question it belongs to (see test 7).
   let pending = null;
   const filled = kind => kind === 'answer' ? !!q.answer : kind === 'hint' ? q.hints.length > 0 : kind === 'transition' ? !!q.transition : q.framework.length > 0;
   const questionLater = i => lines.slice(i + 1).some(l => l.page === lines[i].page && l.col === 'main' && HEADINGS.question.test(l.text));
 
   const content = (ln, t) => {
+    if (/^[•●▪◦‣\-–*]$/.test(t)) return;                           // a bullet glyph on its own line
     const bm = BULLET.exec(t);
     const text = bm ? bm[1] : t;
-    const s = sec[ln.col];
+    let s = sec[ln.col];
     const figure = bm && toRow(text) && /\d/.test(toRow(text).value);
+    // Question text is one block. It ends at a paragraph gap, after a "?", at a "Label:" line or at a bulleted figure;
+    // whatever follows is the interviewer's material.
+    if (s === 'qtext' && q.text && (ln.gap > ln.size * 2.2 || /\?["”’)]?$/.test(q.text) || /:\s*$/.test(t) || (bm && /\d/.test(text)))) { s = sec[ln.col] = 'answer'; }
     if (q && s === 'hint' && figure) {
-      // Order in the guidance is Answer, Hint, figures, Transition: bulleted figures after a hint are rows.
       q.framework.push(toRow(text));
       sec[ln.col] = 'figures';
     } else if (s === 'qtext' || (s && QUESTION_KINDS.includes(s))) {
-      qAppend(s, s === 'qtext' ? t : text, !!bm, t);
+      qAppend(s, text, !!bm, t);
+    } else if (s === 'conclusion') {
+      c.conclusion = joinText(c.conclusion, t);
     } else if (s) {
       caseAppend(s, s === 'clarifying' ? t : text, !!bm);
     } else if (q && ln.col === 'side' && figure) {
-      q.framework.push(toRow(text));               // unlabelled bulleted figure in the guidance column
+      addRow(toRow(text));
     } else if (q) {
       q.notes = joinText(q.notes, t);
     } else {
@@ -155,43 +201,73 @@ export function parseCase(chunk, source = { id: 'local', name: '' }) {
   };
   const heading = (ln, kind, rest) => {
     let target = kind;
-    if (QUESTION_KINDS.includes(kind) && !q) target = kind === 'hint' ? 'frameworkHint' : null;
-    if (kind === 'frameworkHint' && q) target = 'figures';
+    if (QUESTION_KINDS.includes(kind) && !q) target = kind === 'hint' ? 'frameworkHint' : kind === 'answer' ? 'frameworkHint' : null;
+    if (kind === 'frameworkHint' && q) target = 'answer';            // framework guidance under a question is that question's guidance
     sec[ln.col] = target;
     if (target === 'hint') sec._newHint = true;
     if (target && rest) (QUESTION_KINDS.includes(target) ? qAppend(target, rest, false, rest) : caseAppend(target, rest));
     if (!target) unassigned.push(ln.text);
   };
 
+  const lastY = {};
   lines.forEach((ln, i) => {
-    if (ln.page === skipPage) return;
+    if (ended || ln.page === skipPage) return;
+    const prev = lastY[ln.col];
+    ln.gap = prev && prev.page === ln.page ? ln.y - prev.y : Infinity;
+    lastY[ln.col] = ln;
     const t = ln.text;
     let m;
 
-    if ((m = HEADINGS.exhibit.exec(t)) && ln.y < ln.pageHeight * 0.3) {
+    if (HEADINGS.end.test(t)) { ended = true; return; }                  // e.g. a feedback form after the case
+    if ((m = HEADINGS.exhibit.exec(t)) && ln.y < ln.pageHeight * 0.3 && !/^guidance\b/i.test(m[2] || '')) {
       // An exhibit page: shown as an image, so its text is not parsed.
       const n = +m[1];
-      if (!exPages.has(n)) exPages.set(n, { page: ln.page, stage: q ? q.n : 0, title: (m[2] || '').trim() });
+      if (!exPages.has(n)) exPages.set(n, { page: ln.page, before: c.questions.length });
       skipPage = ln.page;
       return;
     }
-    if ((m = HEADINGS.question.exec(t))) {
-      q = { n: +m[1], text: (m[2] || '').trim(), framework: [], answer: '', hints: [], transition: '', notes: '' };
-      c.questions.push(q);
+    if ((m = HEADINGS.question.exec(t)) && !HEADINGS.answer.test(t)) {
+      const num = +m[1];
+      const rest = (m[2] || '').trim();
+      if (q && q.num === num) {
+        // A second page for the same question: what follows is guidance.
+        sec[ln.col] = 'answer';
+        if (rest && !rest.startsWith('(')) qAppend('answer', rest, false, rest);
+        return;
+      }
+      newQuestion(num, `Question ${num}`, rest.startsWith('(') ? '' : rest);
       sec.main = sec.side = null;
       sec[ln.col] = 'qtext';
+      if (ln.col === 'side') sec.main = 'qtext';                     // heading in the narrow column, text beside it
       if (pending) {
         const ops = pending; pending = null;
         const keep = sec[ln.col];
         for (const op of ops) op.kind ? heading(op.ln, op.kind, op.rest) : content(op.ln, op.ln.text);
-        sec.side = ln.col === 'side' ? keep : sec.side;
-        if (ln.col === 'main') sec.main = keep;
+        sec[ln.col] = keep;
       }
       return;
     }
-    const kind = [...CASE_KINDS, ...QUESTION_KINDS].find(k => HEADINGS[k].test(t));
+    if ((m = HEADINGS.conclusion.exec(t))) {
+      q = null;
+      sec.main = sec.side = null;
+      sec[ln.col] = 'conclusion';
+      if (m[1]) c.conclusion = joinText(c.conclusion, m[1].trim());
+      return;
+    }
+    if ((m = HEADINGS.recExtra.exec(t))) {
+      sec[ln.col] = 'recommendation';
+      c.recommendation = joinText(c.recommendation, `${titleCase(t.replace(/[:\-–—].*$/, '').trim())}:${m[1] ? ` ${m[1].trim()}` : ''}`, true);
+      return;
+    }
+    const kind = ALL_KINDS.find(k => HEADINGS[k].test(t));
+    // Other interview stages (brainstorming and the like): a named stage, or an ALL CAPS line opening a page.
+    if (!kind && ln.col === 'main' && (HEADINGS.stage.test(t) || (ln.pageFirst && c.title && isTitleLine(t) && !c.title.toUpperCase().includes(t) && t.split(/\s+/).length <= 5))) {
+      newQuestion(null, titleCase(t.replace(/:$/, '')));
+      sec.main = sec.side = null;
+      sec.main = 'qtext';
+      return;
+    }
     const rest = kind ? (HEADINGS[kind].exec(t)[1] || '').trim() : '';
-
     if (ln.col === 'side' && kind && QUESTION_KINDS.includes(kind) && (!q || (filled(kind) && questionLater(i))) && lines.slice(i + 1).some(l => l.col === 'main' && HEADINGS.question.test(l.text))) {
       (pending ||= []).push({ ln, kind, rest });
       sec.side = '__pending';
@@ -204,19 +280,32 @@ export function parseCase(chunk, source = { id: 'local', name: '' }) {
   if (pending) for (const op of pending) unassigned.push(op.ln.text);
 
   c.clarifyingFacts = parseClarifying(clar, warnings);
+  if (!c.recommendation && c.conclusion) { c.recommendation = c.conclusion; c.conclusion = ''; }
 
-  // Exhibits: shown at the first stage whose text mentions them; otherwise where the page sits.
+  // Text under a question heading that is really a note to the interviewer moves to the guidance.
+  for (const qq of c.questions) {
+    if (/^(?:the )?(?:candidate|interviewee|interviewer)s?\b|^if (?:the )?(?:candidate|interviewee)\b/i.test(qq.text)) {
+      qq.answer = joinText(qq.text, qq.answer, true);
+      qq.text = '';
+    }
+  }
+  // A stage heading with nothing under it (a section divider, say) is dropped.
+  c.questions = c.questions.filter(qq => qq.text || qq.answer || qq.hints.length || qq.framework.length || qq.transition);
+  // Number stages in order. Labels keep the casebook's names ("Question 2", "Brainstorming").
+  c.questions.forEach((qq, i) => { qq.n = i + 1; delete qq.num; });
+
+  // Exhibits: shown at the first stage whose text mentions them; otherwise with the stage that follows the page.
   const refs = new Map();
-  const scan = (text, stage) => { for (const m of text.matchAll(INLINE_EXHIBIT)) if (!refs.has(+m[1])) refs.set(+m[1], stage); };
+  const scan = (text, stage) => { for (const mm of text.matchAll(INLINE_EXHIBIT)) if (!refs.has(+mm[1])) refs.set(+mm[1], stage); };
   scan(c.prompt, 0);
   for (const qq of c.questions) scan(qq.text, qq.n);
   const nums = [...new Set([...exPages.keys(), ...refs.keys()])].sort((a, b) => a - b);
   c.exhibits = nums.map(n => {
-    const page = exPages.get(n)?.page ?? null;
-    const stage = refs.has(n) ? refs.get(n) : exPages.get(n).stage;
-    if (page == null) warnings.push(`Exhibit ${n} is mentioned, but no page titled "Exhibit ${n}" was found.`);
-    else if (!refs.has(n)) warnings.push(`Exhibit ${n} isn't mentioned in any question, so it will appear ${stage ? `with Question ${stage}` : 'at the start'}, where it sits in the PDF.`);
-    return { n, page, stage, description: '' };
+    const ex = exPages.get(n);
+    const positional = ex ? (c.questions[ex.before] || c.questions[ex.before - 1])?.n ?? 0 : 0;
+    const stage = refs.has(n) ? refs.get(n) : positional;
+    if (!ex) warnings.push(`Exhibit ${n} is mentioned, but no page titled "Exhibit ${n}" was found.`);
+    return { n, page: ex?.page ?? null, stage, description: '' };
   });
 
   // Required pieces: warn, don't guess.
@@ -226,10 +315,10 @@ export function parseCase(chunk, source = { id: 'local', name: '' }) {
     ? 'No "Prompt" heading found. Unlabelled text after the title was not used.'
     : 'No prompt found.');
   if (!c.clarifyingFacts.length) warnings.push('No "Clarifying Information" found.');
-  if (!c.questions.length) warnings.push('No "Question N:" blocks found.');
+  if (!c.questions.length) warnings.push('No questions found.');
   for (const qq of c.questions) {
-    if (!qq.text) warnings.push(`Question ${qq.n} has no question text.`);
-    if (!qq.answer) warnings.push(`Question ${qq.n} has no Answer section.`);
+    if (!qq.text) warnings.push(`${qq.label} has no question text.`);
+    if (!qq.answer) warnings.push(`${qq.label} has no answer or guidance section.`);
   }
   if (!c.recommendation) warnings.push('No recommendation found.');
 
@@ -244,22 +333,27 @@ export function parseClarifying(lines, warnings = []) {
   for (const l of lines) {
     const m = /^\s*(\d{1,2})[.)]\s+(.*)$/.exec(l);
     const qm = /^\s*Q\s*[:.]\s*(.*)$/.exec(l);
+    const tm = /^\s*(?:[•●▪\-–]\s*)?[A-Z][^:?]{1,38}:\s+\S/.test(l) && !/^\s*(?:A|Answer)\s*:/.test(l);   // "Topic: fact"
     if (m || qm) { cur = { raw: (m ? m[2] : qm[1]).trim() }; items.push(cur); }
+    else if (tm) { cur = { raw: l.replace(/^\s*[•●▪\-–]\s*/, '').trim() }; items.push(cur); }
     else if (cur) cur.raw = joinText(cur.raw, l.trim());
     else { cur = { raw: l.trim() }; items.push(cur); }
   }
   const facts = [];
   for (const it of items) {
-    let q = '', a = '';
+    if (/^note\s*:/i.test(it.raw)) continue;                    // a note to the interviewer, not a fact
+    let q = '', a = '', topic = false;
     const am = /^(.*?)\s+(?:A|Answer)\s*:\s*(.*)$/.exec(it.raw);
     if (am) { q = am[1].replace(/^Q\s*[:.]\s*/, ''); a = am[2]; }
     else {
       const i = it.raw.indexOf('?');
+      const tm = /^([^:?]{2,40}):\s*(.+)$/.exec(it.raw);
       if (i > 0) { q = it.raw.slice(0, i + 1); a = it.raw.slice(i + 1); }
+      else if (tm) { q = tm[1]; a = tm[2]; topic = true; }          // "Topic: fact" style
     }
     q = q.trim(); a = a.trim();
     if (!q || !a) { warnings.push(`Couldn't split a clarifying item into question and answer: "${it.raw.slice(0, 50)}${it.raw.length > 50 ? '…' : ''}"`); continue; }
-    facts.push({ q, a, keywords: keywords(q) });
+    facts.push({ q, a, keywords: keywords(topic ? `${q} ${a}` : q) });
   }
   return facts;
 }

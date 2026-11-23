@@ -47,7 +47,6 @@ function textForm({ id, label, multiline = false, submit, onSubmit, note, primar
 }
 
 /* ======================= Session view (pure render of engine.view) ======================= */
-const STAGE_LABEL = { intro: 'Intro', framework: 'Framework', behavioral: 'Behavioral', recommendation: 'Recommendation', debrief: 'Debrief', reveal: 'Debrief', done: 'Debrief', skipped: 'Skipped' };
 const KIND_LABEL = { hint: 'Hint', data: 'Data', fact: 'Clarification', transition: 'Transition', recommendation: 'Recommendation', behavioral: 'Behavioral', question: 'Question', prompt: 'Prompt' };
 
 /** Builds the session screen from a view object. Handlers are optional, so tests can render without wiring. */
@@ -94,13 +93,15 @@ export function renderView(v, on = {}) {
 }
 
 function trail(v) {
+  const short = l => /^Question (\d+)$/.test(l) ? `Q${l.slice(9)}` : l;
   const steps = ['intro', 'framework', ...v.progress.numbers.map(n => `q${n}`), ...(v.hasBehavioral ? ['behavioral'] : []), 'recommendation', 'debrief'];
+  const names = ['Intro', 'Framework', ...v.progress.labels.map(short), ...(v.hasBehavioral ? ['Behavioral'] : []), 'Recommendation', 'Debrief'];
   const cur = v.stage === 'question' ? `q${v.progress.numbers[v.progress.index]}` : ['reveal', 'done'].includes(v.stage) ? 'debrief' : v.stage;
   const at = steps.indexOf(cur);
   return h('ol', { class: 'trail', 'aria-label': 'Interview stages' }, steps.map((s, i) => h('li', {
     class: i < at ? 'is-past' : i === at ? 'is-current' : '',
     'aria-current': i === at ? 'step' : null
-  }, s.startsWith('q') ? `Q${s.slice(1)}` : STAGE_LABEL[s])));
+  }, names[i])));
 }
 
 function controls(v, on) {
@@ -122,7 +123,7 @@ function controls(v, on) {
         return [h('div', { class: 'row' }, btn(last ? 'Continue' : 'Next question', () => on.next?.(), { class: 'btn btn-primary', 'data-primary': '1' }))];
       }
       return [
-        h('p', { class: 'step-label' }, `Question ${v.current.n} of ${v.progress.total}`),
+        h('p', { class: 'step-label' }, `${v.current.label} · step ${v.progress.index + 1} of ${v.progress.total}`),
         textForm({ id: 'ask', label: v.current.canAskData ? 'Ask for data or clarification' : 'Ask a clarifying question', submit: 'Ask', onSubmit: t => on.ask?.(t), note: 'Numbers are given only when you ask for them.' }),
         hintBlock(v, v.current.hintsLeft > 0, `Hint (${v.current.hintsLeft} left)`, () => on.hint?.()),
         textForm({ id: 'answer', label: 'Your answer', multiline: true, submit: 'Submit answer', onSubmit: t => on.submitAnswer?.(t), primary: true })
@@ -160,7 +161,7 @@ function rubric(v, on, readOnly = false) {
   ]);
   for (const q of d.questions) {
     box.append(h('fieldset', { class: 'rubric-q' }, [
-      h('legend', {}, `Question ${q.n}`),
+      h('legend', {}, q.label),
       h('p', { class: 'q-text' }, q.text),
       h('div', { class: 'your-answer' }, [h('p', { class: 'who' }, `Your answer${q.hintsUsed ? ` · ${q.hintsUsed} hint${q.hintsUsed > 1 ? 's' : ''} used` : ''}`), h('p', { class: 'msg-text' }, q.yourAnswer || '(no answer)')]),
       h('div', { class: 'checks' }, engine.RUBRIC.map(k => {
@@ -199,7 +200,7 @@ function revealPanel(v) {
     sec('Clarifying information', r.clarifyingFacts.length ? h('dl', { class: 'facts' }, r.clarifyingFacts.flatMap(f => [h('dt', {}, f.q), h('dd', {}, f.a)])) : null),
     sec('Framework hint', para(r.frameworkHint)),
     ...r.questions.map(q => h('section', { class: 'reveal-sec' }, [
-      h('h3', {}, `Question ${q.n}`),
+      h('h3', {}, q.label),
       para(q.text),
       q.framework.length ? h('table', { class: 'rows' }, [
         h('thead', {}, h('tr', {}, [h('th', { scope: 'col' }, 'Figure'), h('th', { scope: 'col' }, 'Value'), h('th', { scope: 'col' }, 'Given on request')])),
@@ -463,7 +464,7 @@ function renderTagForm(c, { then, required = null }) {
       h('p', { class: 'field-note' }, 'Tick the figures the interviewer gives only when asked (the gray rows in your casebook). The rest stay hidden until the debrief.'),
       h('div', { class: 'field check' }, [reveal, h('label', { for: 'show-values' }, 'Show the values (spoilers)')]),
       ...qsWithRows.map(q => h('fieldset', { class: 'rows-tag' }, [
-        h('legend', {}, `Question ${q.n}`),
+        h('legend', {}, q.label || `Question ${q.n}`),
         ...q.framework.map((r, i) => h('label', { class: 'check' }, [
           h('input', { type: 'checkbox', name: `row-${q.n}-${i}`, checked: (t.rows ? t.rows[engine.rowKey(q.n, i)] : r.givenOnRequest) ? true : null }),
           h('span', {}, r.label), h('span', { class: 'spoiler' }, r.value)

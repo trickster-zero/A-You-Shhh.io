@@ -234,6 +234,44 @@ export async function runTests({ render = null } = {}) {
     add('7. Guidance beside a question attaches to it', ok, ok ? 'Guidance above the first question, and a second Answer above the next question on the same page, both attach to the right question.' : got);
   });
 
+  // 8. Slide-style casebooks: running "N | CASE: TITLE" header, letter-spaced and doubled text, named stages,
+  //    guidance headings, "Provide if asked" figures, a conclusion prompt, and a feedback form after the case.
+  tryTest('8. Slide-style layout: headers, stages, guidance and figures', () => {
+    const slide = (n, left, right = [], header = true) => {
+      const pg = page(n, left, right);
+      if (header) pg.items.push(item('0 3', 50, 60), item('|', 75, 60), item('C A S E :', 85, 60), item('L A N T E R N', 140, 60), item('B I K E S', 220, 60), item('L A N T E R N', 140, 60));
+      return pg;
+    };
+    const pages = buildPages([
+      slide(1, ['LANTERN BIKES', 'Consumer | Growth  •  Skills Tested: sizing', 'Prompt:', 'A fictional maker of e-bikes wants to grow.', 'Clarifying Information: Note: Provide this only if asked.', '1. What is the goal? Double sales.', 'Market: Small and fragmented.'], ['B E H A V I O R A L', 'I N T E R V I E W', 'Q U E S T I O N :', 'Tell me about a team you led.']),
+      slide(2, ['Framework Guidance:', 'Revenue and costs.']),
+      slide(3, ['EXHIBIT 1', 'Sales by year (fictional)']),
+      slide(4, ['Question 1 (place these slides where you like)', '• What does the exhibit show?', '', 'Exhibit or Question Guidance:', 'Sales are flat.'], ['Provide if asked:', '• Units: 4,000', 'Best candidates:', 'Spot the flat trend.']),
+      slide(5, ['BRAINSTORMING', 'How could the client grow?', '', 'Brainstorming Guidance:', 'New cities, new models.']),
+      slide(6, ['CONCLUSION', 'What should the client do?', 'Recommendation:', '• Launch in two new cities.', 'Risks:', '• Weather.']),
+      slide(7, ['INTERVIEWER FEEDBACK FORM', 'Structure 1 2 3 4 5'])
+    ]);
+    const { cases } = parseCasebook(pages);
+    const c = cases[0];
+    const problems = [];
+    if (cases.length !== 1) problems.push(`${cases.length} cases`);
+    if (c.caseNumber !== '3' || c.title !== 'LANTERN BIKES' || c.industry !== 'Consumer' || c.type !== 'Growth') problems.push(`header/title/subtitle: ${c.caseNumber} ${c.title} ${c.industry}|${c.type}`);
+    if (!/fictional maker/.test(c.prompt) || /Note/.test(c.prompt)) problems.push('prompt');
+    if (c.clarifyingFacts.map(f => f.q).join('|') !== 'What is the goal?|Market') problems.push(`facts: ${c.clarifyingFacts.map(f => f.q)}`);
+    if (!/team you led/.test(c.behavioral) || /INTERVIEW/.test(c.behavioral)) problems.push(`behavioral: ${c.behavioral}`);
+    if (c.frameworkHint !== 'Revenue and costs.') problems.push('framework guidance');
+    if (c.questions.map(q => q.label).join('|') !== 'Question 1|Brainstorming') problems.push(`stages: ${c.questions.map(q => q.label)}`);
+    const q1 = c.questions[0];
+    if (q1?.text !== '• What does the exhibit show?' && q1?.text !== 'What does the exhibit show?') problems.push(`Q1 text: ${q1?.text}`);
+    if (!/Sales are flat/.test(q1?.answer) || !/flat trend/.test(q1?.answer)) problems.push('Q1 guidance');
+    if (q1?.framework[0]?.label !== 'Units' || q1.framework[0].value !== '4,000') problems.push(`rows: ${JSON.stringify(q1?.framework)}`);
+    if (c.exhibits[0]?.stage !== 1) problems.push('exhibit not shown with the question after it');
+    if (c.conclusion !== 'What should the client do?' || !/two new cities/.test(c.recommendation) || !/Risks:/.test(c.recommendation)) problems.push('conclusion/recommendation');
+    if (/Structure 1 2 3/.test(JSON.stringify(c))) problems.push('feedback form parsed');
+    add('8. Slide-style layout: headers, stages, guidance and figures', !problems.length, problems.length ? problems.join('; ')
+      : 'Running header with letter-spaced, doubled text starts the case; stages keep their names; guidance, "Provide if asked" figures, conclusion and risks land in the right fields; the feedback form is ignored.');
+  });
+
   return results;
 }
 
