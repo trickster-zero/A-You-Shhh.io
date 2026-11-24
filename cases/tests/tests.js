@@ -1,14 +1,14 @@
 // Tests for the case practice app. Fixtures are fictional and built in code; no PDFs are used.
 // Browser: cases/index.html?test     Node: node cases/tests/tests.js
-import { buildPages } from '../js/pdf-import.js';
-import { parseCasebook, matchByKeywords } from '../js/parser.js';
-import * as engine from '../js/engine.js';
-import { createStore, memoryStorage, buildProgressExport } from '../js/store.js';
+import { buildPages } from '../js/pdf-import.js?v=20261123b';
+import { parseCasebook, splitCases, matchByKeywords } from '../js/parser.js?v=20261123b';
+import * as engine from '../js/engine.js?v=20261123b';
+import { createStore, memoryStorage, buildProgressExport } from '../js/store.js?v=20261123b';
 
 /* ---------- fictional fixture: a two-column casebook, 3 pages ---------- */
 const W = 612, H = 792;
 const item = (str, x, y, size = 10) => ({ str, x, y, w: str.length * size * 0.5, h: size });
-function page(n, left, right) {
+function page(n, left = [], right = []) {
   const items = [item('Fictional Practice Casebook', 50, 32, 9), item(String(n), 300, 765, 9)];
   left.forEach((t, i) => items.push(item(t, 50, 110 + i * 16)));
   right.forEach((t, i) => items.push(item(t, 400, 110 + i * 16)));
@@ -270,6 +270,30 @@ export async function runTests({ render = null } = {}) {
     if (/Structure 1 2 3/.test(JSON.stringify(c))) problems.push('feedback form parsed');
     add('8. Slide-style layout: headers, stages, guidance and figures', !problems.length, problems.length ? problems.join('; ')
       : 'Running header with letter-spaced, doubled text starts the case; stages keep their names; guidance, "Provide if asked" figures, conclusion and risks land in the right fields; the feedback form is ignored.');
+  });
+
+  // 9. Hard case boundaries: each case is read only from its own pages.
+  tryTest('9. Each case is read from its own pages only', () => {
+    const pages = buildPages([
+      page(1, ['About this casebook', 'Read the cases in any order.', 'Prompt practice tips live here too.']),
+      page(2, ['Case 1: ALPHA ROW', 'Retail | Pricing', 'Prompt', 'Alpha sells fictional lamps.', 'Question 1: What price works?'], ['Answer', 'About $30.']),
+      page(3, ['Recommendation', 'Hold the price.', 'Interviewer Feedback Form', 'Scores go here.']),
+      page(4, ['Beta Yard', 'Energy | Growth']),                               // cover page between cases
+      page(5, ['Case 2: BETA YARD', 'Energy | Growth', 'Prompt', 'Beta runs fictional wind farms.', 'Question 1: Where should it grow?'], ['Answer', 'Up north.']),
+      page(6, ['Recommendation', 'Grow north first.'])
+    ]);
+    const segs = splitCases(pages);
+    const { cases } = parseCasebook(pages);
+    const problems = [];
+    const spans = segs.map(s => `${s.number}:${s.pages.join(',')}`).join(' | ');
+    if (spans !== '1:2,3 | 2:5,6') problems.push(`page spans ${spans}`);
+    const [a, b] = cases;
+    if (a?.prompt !== 'Alpha sells fictional lamps.' || b?.prompt !== 'Beta runs fictional wind farms.') problems.push(`prompts: "${a?.prompt}" / "${b?.prompt}"`);
+    if (/Beta|wind|north/i.test(JSON.stringify(a)) || /Alpha|lamps|Hold the price/i.test(JSON.stringify(b))) problems.push('text from one case reached the other');
+    if (/tips|Scores go here/.test(JSON.stringify(cases))) problems.push('front matter or the feedback form was read into a case');
+    if (a?.firstPage !== 2 || a?.lastPage !== 3 || b?.firstPage !== 5 || b?.lastPage !== 6) problems.push('page range not recorded');
+    add('9. Each case is read from its own pages only', !problems.length, problems.length ? problems.join('; ')
+      : 'Pages are split first (case 1: pages 2–3, case 2: pages 5–6). Front matter, the feedback form and the cover page between cases belong to no case, and no text crosses between cases.');
   });
 
   return results;

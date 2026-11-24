@@ -1,7 +1,7 @@
 // Parser: pure functions, no DOM. Turns laid-out pages (from pdf-import.js) into case objects.
 // Headings are matched with the patterns in HEADINGS. If your casebook uses other words, edit them there.
 // Missing required pieces become warnings. The parser never invents content.
-import { fnv } from './pdf-import.js';
+import { fnv } from './pdf-import.js?v=20261123b';
 
 const head = words => new RegExp(`^(?:${words})\\s*(?:[:\\-–—]\\s*(.*))?$`, 'i');
 
@@ -44,12 +44,20 @@ function isHeading(t) {
 const titleCase = t => t.toLowerCase().replace(/\b[a-z]/g, ch => ch.toUpperCase());
 
 /**
- * parseCasebook(pages, { source }) -> { cases, warnings }
- * pages: output of buildPages(). source: { id, name } of the imported file.
+ * Step 1: split the PDF into cases before reading anything.
+ * Every case gets a fixed span of pages, and nothing outside that span can end up in it:
+ * - a case starts at "Case N", at a running header "N | CASE: TITLE", or at an ALL CAPS title over "Industry | Type"
+ * - it runs until the next case starts (cut at that line if the next case starts mid-page)
+ * - an end page (a feedback form, say) closes it; the pages after it belong to no case
+ * - cover pages (just a title and "Industry | Type") and front matter belong to no case
+ * Returns [{ number, rest, pre, titled, firstPage, lastPage, pages, lines }].
  */
-export function parseCasebook(pages, { source = { id: 'local', name: 'casebook.pdf' } } = {}) {
+export function splitCases(pages) {
   const lines = [];
+  const covers = new Set();
   for (const p of pages) {
+    const main = p.lines.filter(l => l.col !== 'side' && l.text.trim());
+    if (main.length && main.length <= 4 && main.some(l => HEADINGS.subtitle.test(l.text.trim())) && !main.some(l => isHeading(l.text.trim()))) covers.add(p.page);
     let first = true;
     for (const l of p.lines) {
       const text = l.text.trim();
@@ -59,43 +67,66 @@ export function parseCasebook(pages, { source = { id: 'local', name: 'casebook.p
     }
   }
 
-  // A case starts at "Case N", at a running header "N | CASE: TITLE", or at an ALL CAPS title followed by "Industry | Type".
-  const chunks = [];
+  const segs = [];
+  const front = [];
   let cur = null;
+  const letters = t => String(t).toLowerCase().replace(/[^a-z]/g, '');
   lines.forEach((ln, i) => {
+    if (covers.has(ln.page)) { if (cur) cur.closed = true; return; }   // a cover page sits between cases
     let start = null;
     if (ln.col === 'main' && ln.text.length <= 90) {
       const h = HEADINGS.caseHeader.exec(ln.text) || HEADINGS.caseStart.exec(ln.text);
       if (h) {
         const number = String(+h[1].replace(/\s/g, ''));
         if (cur && cur.number === number) return;                    // the same case's header on a later page
-        const letters = t => String(t).toLowerCase().replace(/[^a-z]/g, '');
-        if (cur && !cur.number && cur.titled && h[2] && (letters(cur.lines[0].text).includes(letters(h[2])) || letters(h[2]).includes(letters(cur.lines[0].text)))) {
+        if (cur && !cur.number && cur.titled && !cur.closed && h[2] && (letters(cur.lines[0].text).includes(letters(h[2])) || letters(h[2]).includes(letters(cur.lines[0].text)))) {
           cur.number = number;                                        // the case opened on a page without the header
           return;
         }
         start = { number, rest: (h[2] || '').trim() };
       } else if (isTitleLine(ln.text)) {
         const next = lines.slice(i + 1, i + 3).find(l => l.col === 'main' && l.page === ln.page);
-        const fresh = cur && cur.page === ln.page && cur.lines.length < 4;
+        const fresh = cur && !cur.closed && cur.firstPage === ln.page && cur.lines.length < 4;
         if (next && HEADINGS.subtitle.test(next.text) && !fresh) start = { number: null, rest: '', titled: true };
       }
     }
     if (start) {
-      const prev = cur?.lines[cur.lines.length - 1];
+      const prev = cur && !cur.closed ? cur.lines[cur.lines.length - 1] : null;
       const pre = !start.titled && prev && prev.page === ln.page && isTitleLine(prev.text) ? cur.lines.pop() : null;
-      cur = { ...start, pre, lines: start.titled ? [ln] : [], page: ln.page };
-      chunks.push(cur);
+      cur = { ...start, pre, closed: false, firstPage: ln.page, lines: start.titled ? [ln] : [] };
+      segs.push(cur);
       return;
     }
-    if (!cur) { cur = { number: null, rest: '', pre: null, lines: [], page: ln.page }; chunks.push(cur); }
+    if (!cur) { front.push(ln); return; }                            // front matter before the first case
+    if (cur.closed) return;
+    if (HEADINGS.end.test(ln.text)) { cur.closed = true; return; }    // e.g. a feedback form after the case
     cur.lines.push(ln);
   });
-  // Front matter (introductions, industry overviews) holds no questions or prompt, so it is dropped.
-  const isCase = c => c.number || c.titled || c.lines.some(l => HEADINGS.question.test(l.text) || HEADINGS.prompt.test(l.text));
-  const kept = chunks.filter(isCase);
 
-  const cases = kept.map(ch => parseCase(ch, source));
+  // No case markers at all: treat the whole document as one case.
+  if (!segs.length && front.length) {
+    const lines1 = [];
+    for (const ln of front) { if (HEADINGS.end.test(ln.text)) break; lines1.push(ln); }
+    segs.push({ number: null, rest: '', pre: null, titled: false, firstPage: front[0].page, lines: lines1 });
+  }
+  for (const s of segs) {
+    const ps = [...new Set([s.firstPage, ...s.lines.map(l => l.page), ...(s.pre ? [s.pre.page] : [])])].sort((a, b) => a - b);
+    s.pages = ps;
+    s.lastPage = ps[ps.length - 1];
+    s.page = s.firstPage;
+    delete s.closed;
+  }
+  return segs;
+}
+
+/**
+ * parseCasebook(pages, { source }) -> { cases, warnings }
+ * Step 2: each case is read from its own pages only.
+ * pages: output of buildPages(). source: { id, name } of the imported file.
+ */
+export function parseCasebook(pages, { source = { id: 'local', name: 'casebook.pdf' } } = {}) {
+  const segments = splitCases(pages);
+  const cases = segments.map(seg => parseCase(seg, source));
   const warnings = cases.flatMap(c => c.warnings.map(message => ({ caseId: c.id, title: c.title, message })));
   if (!cases.length) warnings.push({ caseId: null, title: '', message: 'No cases were found in this PDF.' });
   return { cases, warnings };
@@ -108,7 +139,8 @@ export function parseCase(chunk, source = { id: 'local', name: '' }) {
     difficulty: null, tags: {},
     prompt: '', clarifyingFacts: [], behavioral: '', frameworkHint: '',
     questions: [], exhibits: [], conclusion: '', recap: '', recommendation: '',
-    source: { id: source.id, name: source.name, firstPage: chunk.page },
+    pages: chunk.pages || [], firstPage: chunk.firstPage ?? chunk.page ?? null, lastPage: chunk.lastPage ?? null,
+    source: { id: source.id, name: source.name, firstPage: chunk.firstPage ?? chunk.page },
     warnings
   };
   const lines = chunk.lines.slice();

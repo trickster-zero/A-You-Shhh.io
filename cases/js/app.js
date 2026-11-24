@@ -1,10 +1,10 @@
 // UI wiring only. Rules live in engine.js, parsing in parser.js, storage in store.js.
 // During a session the page is built only from engine.view(), so it can't show anything early.
-import { readPdf, buildPages, sourceIdFor, rememberPdf, recallPdf, openPdf, renderPageImage, forgetPdfs } from './pdf-import.js';
-import { parseCasebook } from './parser.js';
-import * as engine from './engine.js';
-import { createStore } from './store.js';
-import { createSpeech } from './speech.js';
+import { readPdf, buildPages, sourceIdFor, rememberPdf, recallPdf, openPdf, renderPageImage, forgetPdfs } from './pdf-import.js?v=20261123b';
+import { parseCasebook } from './parser.js?v=20261123b';
+import * as engine from './engine.js?v=20261123b';
+import { createStore } from './store.js?v=20261123b';
+import { createSpeech } from './speech.js?v=20261123b';
 
 /* ======================= DOM helpers ======================= */
 export function h(tag, attrs = {}, kids = []) {
@@ -221,6 +221,7 @@ function revealPanel(v) {
 const app = { store: null, speech: null, session: null, report: null, filters: { industry: '', type: '', difficulty: '' }, exhibits: new Map(), confirmClear: false };
 let main;
 const now = () => new Date().toISOString();
+const pageRange = c => (c.firstPage ? (c.lastPage && c.lastPage !== c.firstPage ? `pages ${c.firstPage}–${c.lastPage}` : `page ${c.firstPage}`) : '');
 const mount = (...nodes) => main.replaceChildren(...nodes.filter(Boolean));
 
 function boot() {
@@ -276,7 +277,7 @@ function renderLibrary() {
   const caseRows = filtered.map(c => h('tr', {}, [
     h('th', { scope: 'row' }, [c.caseNumber ? h('span', { class: 'num' }, `${c.caseNumber}. `) : '', c.title || 'Untitled case',
       c.warnings?.length ? h('details', { class: 'warn' }, [h('summary', {}, `${c.warnings.length} import warning${c.warnings.length > 1 ? 's' : ''}`), h('ul', {}, c.warnings.map(w => h('li', {}, w)))]) : null]),
-    h('td', {}, [c.industry, c.type].filter(Boolean).join(' | ') || '—'),
+    h('td', {}, [[c.industry, c.type].filter(Boolean).join(' | ') || '—', h('span', { class: 'pages' }, pageRange(c))]),
     h('td', {}, diffOf(c) ? String(diffOf(c)) : 'Untagged'),
     h('td', {}, statusOf(c.id)),
     h('td', { class: 'actions' }, [
@@ -371,7 +372,11 @@ function announce(text, error = false) {
 
 function reportView(r) {
   return h('div', { class: 'report' }, [
-    h('p', {}, `${r.cases.length} case${r.cases.length === 1 ? '' : 's'} found in ${r.name}.`),
+    h('p', {}, `${r.cases.length} case${r.cases.length === 1 ? '' : 's'} found in ${r.name}. Each case is read from its own pages only.`),
+    r.cases.length ? h('details', { class: 'warn' }, [
+      h('summary', {}, 'Pages per case'),
+      h('ul', {}, r.cases.map(c => h('li', {}, `${c.caseNumber ? `${c.caseNumber}. ` : ''}${c.title || 'Untitled case'}: ${pageRange(c)}`)))
+    ]) : null,
     r.warnings.length ? h('details', { class: 'warn' }, [
       h('summary', {}, `${r.warnings.length} warning${r.warnings.length > 1 ? 's' : ''}`),
       h('ul', {}, r.warnings.map(w => h('li', {}, `${w.title || 'Case'}: ${w.message}`)))
@@ -388,9 +393,9 @@ async function onImport(file, status, input) {
     const sourceId = sourceIdFor(file.name, file.size, numPages);
     const pages = buildPages(raw, { sideColumn: app.store.settings().sideColumn });
     const { cases, warnings } = parseCasebook(pages, { source: { id: sourceId, name: file.name } });
-    if (cases.length) app.store.saveCases(cases);
+    app.store.replaceSource(sourceId, cases);
     await rememberPdf(sourceId, bytes);
-    app.report = { name: file.name, cases: cases.map(c => ({ id: c.id, title: c.title })), warnings };
+    app.report = { name: file.name, cases: cases.map(c => ({ id: c.id, title: c.title, caseNumber: c.caseNumber, firstPage: c.firstPage, lastPage: c.lastPage })), warnings };
     renderLibrary();
     announce(cases.length ? `Imported ${cases.length} case${cases.length === 1 ? '' : 's'} from ${file.name}.` : `No cases were found in ${file.name}.`, !cases.length);
   } catch (err) {
@@ -627,7 +632,7 @@ function reopenPrompt(c) {
 /* ---------- ?test ---------- */
 async function runBrowserTests() {
   main.replaceChildren(h('p', { class: 'loading' }, 'Running tests…'));
-  const { runTests } = await import('../tests/tests.js');
+  const { runTests } = await import('../tests/tests.js?v=20261123b');
   const results = await runTests({ render: v => renderView(v, {}) });
   const passed = results.filter(r => r.pass).length;
   main.replaceChildren(

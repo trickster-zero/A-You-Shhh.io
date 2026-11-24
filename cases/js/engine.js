@@ -1,7 +1,7 @@
 // Interview flow as a pure state machine. No DOM, no storage, no timers.
 // The UI renders only view(caseObj, state). Anything the stage doesn't allow never enters the view,
 // so answers, hints and numbers cannot reach the page early.
-import { matchByKeywords } from './parser.js';
+import { matchByKeywords } from './parser.js?v=20261123b';
 
 export const NOT_IN_MATERIALS = "That isn't in the case materials.";
 export const RUBRIC = ['structure', 'math', 'synthesis', 'communication'];

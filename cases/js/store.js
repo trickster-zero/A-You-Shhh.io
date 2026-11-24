@@ -39,6 +39,13 @@ export function createStore(storage = defaultStorage()) {
       write(KEYS.library, [...byId.values()]);
       return byId.size;
     },
+    /** Re-importing a PDF replaces every case that came from it, so earlier parses can't linger. */
+    replaceSource(sourceId, cases) {
+      const kept = read(KEYS.library, []).filter(c => c.source?.id !== sourceId);
+      const ids = new Set(cases.map(c => c.id));
+      write(KEYS.library, [...kept.filter(c => !ids.has(c.id)), ...cases]);
+      return cases.length;
+    },
     removeCase(id) { write(KEYS.library, read(KEYS.library, []).filter(c => c.id !== id)); },
 
     /* tags */
