@@ -42,6 +42,7 @@ export function createGame(config, seed, names) {
     trade: null, freeRoads: 0, cardPlayed: false,
     awards: { longestRoad: null, harborMastery: null, largestFleet: null },
     winner: null,
+    events: [],
     log: [`A new game begins on ${config.name}. Seed ${seedValue}.`, `${list[0]} places first.`],
     history: []
   };
@@ -68,6 +69,8 @@ export function applyAction(state, action) {
   checkShape(action);
   if (state.phase === 'over') throw new Error(MSG.over);
   const s = clone(state);
+  s.events = [];
+  const ev = e => s.events.push(e);  // what changed, for the UI; no rule reads these
   const rng = createRng(s.rng);
   const p = action.player;
   const P = s.players;
@@ -91,6 +94,7 @@ export function applyAction(state, action) {
       P[p].built.settlement++;
       s.setup.step = 'road'; s.setup.lastSettlement = action.vertex;
       say(`${name(p)} places a settlement.`);
+      ev({ type: 'piece_built', player: p, kind: 'settlement', vertex: action.vertex, setup: true });
       if (s.setup.index >= P.length) {
         const got = {};
         for (const hid of s.board.vertices[action.vertex].hexes) {
@@ -98,7 +102,7 @@ export function applyAction(state, action) {
           if (res) got[res] = (got[res] || 0) + 1;
         }
         P[p].hand = R.gain(P[p].hand, got);
-        if (Object.keys(got).length) say(`${name(p)} starts with ${list(got)}.`);
+        if (Object.keys(got).length) { say(`${name(p)} starts with ${list(got)}.`); ev({ type: 'card_gained', player: p, cards: got, reason: 'setup' }); }
       }
       break;
     }
@@ -109,9 +113,11 @@ export function applyAction(state, action) {
       P[p].built.road++;
       s.setup.index++; s.setup.step = 'settlement'; s.setup.lastSettlement = null;
       say(`${name(p)} places a road.`);
+      ev({ type: 'piece_built', player: p, kind: 'road', edge: action.edge, setup: true });
       if (s.setup.index >= s.setup.order.length) {
         s.phase = 'roll'; s.current = 0; s.turn = 1;
         say(`Setup is complete. ${name(0)} rolls first.`);
+        ev({ type: 'turn_ended', player: p, next: 0, setupComplete: true });
       } else if (s.setup.order[s.setup.index] !== p) {
         say(`${name(s.setup.order[s.setup.index])} places next.`);
       }
@@ -125,6 +131,7 @@ export function applyAction(state, action) {
       const total = dice[0] + dice[1];
       s.dice = dice;
       say(`${name(p)} rolls ${dice[0]} and ${dice[1]}: ${total}.`);
+      ev({ type: 'roll', player: p, dice, total });
       if (total === 7) {
         s.pending.discards = {};
         P.forEach((pl, i) => { const n = R.handSize(pl.hand); if (n >= s.config.discardLimit) s.pending.discards[i] = Math.floor(n / 2); });
@@ -133,12 +140,20 @@ export function applyAction(state, action) {
         if (who.length) {
           s.phase = 'discard';
           say(`${who.map(i => `${name(+i)} must discard ${s.pending.discards[i]}`).join('. ')}.`);
+          ev({ type: 'discard_required', player: p, discards: { ...s.pending.discards } });
         } else {
           s.phase = 'robber';
           say(`${name(p)} moves the robber.`);
         }
       } else {
         const pay = R.production(s, total);
+        const payouts = [];
+        for (const hx of s.board.hexes) {
+          if (hx.token !== total || hx.id === s.board.robber) continue;
+          const res = s.config.terrains[hx.terrain].resource;
+          for (const v of hx.vertices) { const b = s.buildings[v]; if (b && res) payouts.push({ hex: hx.id, vertex: v, player: b.player, resource: res, amount: b.kind === 'city' ? 2 : 1 }); }
+        }
+        ev({ type: 'production', player: p, total, payouts });
         const lines = Object.entries(pay).map(([i, got]) => { P[i].hand = R.gain(P[i].hand, got); return `${name(+i)} collects ${list(got)}`; });
         say(lines.length ? `${lines.join('. ')}.` : 'Nothing is produced.');
         s.phase = 'main';
@@ -156,6 +171,7 @@ export function applyAction(state, action) {
       P[p].hand = R.pay(P[p].hand, cards);
       delete s.pending.discards[p];
       say(`${name(p)} discards ${need} card${need === 1 ? '' : 's'}.`);
+      ev({ type: 'card_lost', player: p, cards: Object.fromEntries(Object.entries(cards).filter(([, n]) => n > 0)), reason: 'discard' });
       if (!Object.keys(s.pending.discards).length) { s.phase = 'robber'; say(`${name(s.current)} moves the robber.`); }
       break;
     }
@@ -167,13 +183,16 @@ export function applyAction(state, action) {
       const victims = R.robberVictims(s, hex.id, p);
       const victim = action.victim ?? null;
       must(victims.length ? victims.includes(victim) : victim === null, MSG.victim);
+      const robberFrom = s.board.robber;
       s.board.robber = hex.id;
+      ev({ type: 'robber_moved', player: p, from: robberFrom, to: hex.id });
       say(`${name(p)} moves the robber to a ${s.config.terrains[hex.terrain].label} hex${hex.token ? ` (${hex.token})` : ''}.`);
       if (victim !== null) {
         const pool = s.config.resources.flatMap(r => Array(P[victim].hand[r]).fill(r));
         const r = pool[rng.int(0, pool.length - 1)];
         P[victim].hand[r]--; P[p].hand[r]++;
         say(`${name(p)} takes a card from ${name(victim)}.`);
+        ev({ type: 'steal', player: p, victim, resource: r });
       }
       s.phase = s.pending.returnPhase;
       s.pending.returnPhase = 'main';
@@ -186,10 +205,11 @@ export function applyAction(state, action) {
       must(s.phase === 'main' || free, MSG.phase('build', s.phase));
       must(s.config.pieces.road - P[p].built.road > 0, MSG.noPieces('road'));
       must(R.roadSpots(s, p).includes(action.edge), MSG.spot('road'));
-      if (!free) { must(R.canAfford(P[p].hand, s.config.costs.road), MSG.afford('road', R.costLabel(s, s.config.costs.road))); P[p].hand = R.pay(P[p].hand, s.config.costs.road); }
+      if (!free) { must(R.canAfford(P[p].hand, s.config.costs.road), MSG.afford('road', R.costLabel(s, s.config.costs.road))); P[p].hand = R.pay(P[p].hand, s.config.costs.road); ev({ type: 'card_lost', player: p, cards: { ...s.config.costs.road }, reason: 'build' }); }
       s.roads[action.edge] = p;
       P[p].built.road++;
       say(`${name(p)} builds a road${free ? ' under charter' : ''}.`);
+      ev({ type: 'piece_built', player: p, kind: 'road', edge: action.edge, charter: free });
       if (free) {
         s.freeRoads--;
         if (s.freeRoads <= 0 || !R.roadSpots(s, p).length) { s.freeRoads = 0; s.phase = 'main'; }
@@ -202,9 +222,11 @@ export function applyAction(state, action) {
       must(R.settlementSpots(s, p).includes(action.vertex), MSG.spot('settlement'));
       must(R.canAfford(P[p].hand, s.config.costs.settlement), MSG.afford('settlement', R.costLabel(s, s.config.costs.settlement)));
       P[p].hand = R.pay(P[p].hand, s.config.costs.settlement);
+      ev({ type: 'card_lost', player: p, cards: { ...s.config.costs.settlement }, reason: 'build' });
       s.buildings[action.vertex] = { player: p, kind: 'settlement' };
       P[p].built.settlement++;
       say(`${name(p)} builds a settlement.`);
+      ev({ type: 'piece_built', player: p, kind: 'settlement', vertex: action.vertex });
       break;
     }
     case 'buildCity': {
@@ -213,9 +235,11 @@ export function applyAction(state, action) {
       must(R.citySpots(s, p).includes(action.vertex), 'A city replaces one of your settlements.');
       must(R.canAfford(P[p].hand, s.config.costs.city), MSG.afford('city', R.costLabel(s, s.config.costs.city)));
       P[p].hand = R.pay(P[p].hand, s.config.costs.city);
+      ev({ type: 'card_lost', player: p, cards: { ...s.config.costs.city }, reason: 'build' });
       s.buildings[action.vertex] = { player: p, kind: 'city' };
       P[p].built.city++; P[p].built.settlement--;
       say(`${name(p)} upgrades a settlement to a city.`);
+      ev({ type: 'piece_built', player: p, kind: 'city', vertex: action.vertex, upgrade: true });
       break;
     }
 
@@ -225,8 +249,10 @@ export function applyAction(state, action) {
       must(s.deck.length > 0, MSG.deckEmpty);
       must(R.canAfford(P[p].hand, s.config.costs.card), MSG.afford('card', R.costLabel(s, s.config.costs.card)));
       P[p].hand = R.pay(P[p].hand, s.config.costs.card);
+      ev({ type: 'card_lost', player: p, cards: { ...s.config.costs.card }, reason: 'card' });
       P[p].cards.push({ type: s.deck.pop(), turn: s.turn });
       say(`${name(p)} buys a card.`);
+      ev({ type: 'dev_card_bought', player: p, deckLeft: s.deck.length });
       break;
     }
     case 'playCard': {
@@ -247,6 +273,7 @@ export function applyAction(state, action) {
       P[p].played[action.card]++;
       s.cardPlayed = true;
       say(`${name(p)} plays ${def.label}.`);
+      ev({ type: 'card_played', player: p, card: action.card });
       if (action.card === 'privateer') { s.pending.returnPhase = s.phase; s.phase = 'robber'; }
       if (action.card === 'charter') {
         s.freeRoads = Math.min(2, s.config.pieces.road - P[p].built.road);
@@ -258,18 +285,21 @@ export function applyAction(state, action) {
         for (const r of action.resources) got[r] = (got[r] || 0) + 1;
         P[p].hand = R.gain(P[p].hand, got);
         say(`${name(p)} takes ${list(got)} from the bank.`);
+        ev({ type: 'card_gained', player: p, cards: got, reason: 'windfall' });
       }
       if (action.card === 'embargo') {
         let total = 0;
-        P.forEach((pl, i) => { if (i !== p) { total += pl.hand[action.resource]; pl.hand[action.resource] = 0; } });
+        P.forEach((pl, i) => { if (i !== p) { const n = pl.hand[action.resource]; total += n; pl.hand[action.resource] = 0; if (n) ev({ type: 'card_lost', player: i, cards: { [action.resource]: n }, reason: 'embargo', to: p }); } });
         P[p].hand[action.resource] += total;
         say(`Every other player hands over their ${label(action.resource)}: ${total} in all.`);
+        if (total) ev({ type: 'card_gained', player: p, cards: { [action.resource]: total }, reason: 'embargo' });
       }
       break;
     }
     case 'finishCharter':
       must(s.phase === 'charter', MSG.phase('finish the charter', s.phase));
       s.freeRoads = 0; s.phase = 'main';
+      ev({ type: 'charter_finished', player: p });
       break;
 
     /* ----- trade ----- */
@@ -281,6 +311,7 @@ export function applyAction(state, action) {
       must(P[p].hand[action.give] >= rate, MSG.rate(rate, label(action.give)));
       P[p].hand = R.gain(R.pay(P[p].hand, { [action.give]: rate }), { [action.get]: 1 });
       say(`${name(p)} trades ${rate} ${label(action.give)} for 1 ${label(action.get)} at ${rate}:1.`);
+      ev({ type: 'trade', player: p, from: p, to: 'bank', give: { [action.give]: rate }, get: { [action.get]: 1 }, rate });
       break;
     }
     case 'proposeTrade': {
@@ -295,6 +326,7 @@ export function applyAction(state, action) {
       s.trade = { from: p, to: action.to, give, get };
       s.phase = 'trade';
       say(`${name(p)} offers ${name(action.to)} ${list(give)} for ${list(get)}.`);
+      ev({ type: 'trade_offered', player: p, from: p, to: action.to, give, get });
       break;
     }
     case 'respondTrade': {
@@ -306,7 +338,8 @@ export function applyAction(state, action) {
         P[t.from].hand = R.gain(R.pay(P[t.from].hand, t.give), t.get);
         P[t.to].hand = R.gain(R.pay(P[t.to].hand, t.get), t.give);
         say(`${name(t.to)} accepts the trade.`);
-      } else say(`${name(t.to)} declines the trade.`);
+        ev({ type: 'trade', player: p, from: t.from, to: t.to, give: t.give, get: t.get });
+      } else { say(`${name(t.to)} declines the trade.`); ev({ type: 'trade_declined', player: p, from: t.from, to: t.to }); }
       s.trade = null; s.phase = 'main';
       break;
     }
@@ -317,13 +350,14 @@ export function applyAction(state, action) {
       s.current = (s.current + 1) % P.length;
       s.turn++; s.phase = 'roll'; s.dice = null; s.cardPlayed = false;
       say(`It's ${name(s.current)}'s turn.`);
+      ev({ type: 'turn_ended', player: p, next: s.current });
       break;
     }
     default: throw new Error(MSG.unknown(action.type));
   }
 
   s.rng = rng.position;
-  updateAwards(s, say, name);
+  updateAwards(s, say, name, ev);
   // A player wins only on their own turn: check the turn owner after every action, including at the start of a turn.
   if (s.phase !== 'setup' && s.phase !== 'over') {
     const pts = R.totalPoints(s, s.current);
@@ -331,19 +365,21 @@ export function applyAction(state, action) {
       s.winner = s.current; s.phase = 'over';
       const hidden = R.hiddenPoints(s, s.current);
       say(`${name(s.current)} wins with ${pts} victory points${hidden ? `, including ${hidden} from Monuments` : ''}.`);
+      ev({ type: 'victory', player: s.current, points: pts, hidden });
     }
   }
   s.history.push(clone(action));
   return s;
 }
 
-function updateAwards(s, say, name) {
+function updateAwards(s, say, name, ev) {
   const next = R.computeAwards(s);
   for (const k of Object.keys(next)) {
     const a = s.awards[k], b = next[k], lab = s.config.awards[k].label;
     if ((a?.player ?? null) !== (b?.player ?? null)) {
       if (b) say(`${name(b.player)} takes ${lab} (${b.value}).`);
       else say(`Nobody holds ${lab} now.`);
+      ev({ type: 'award_changed', award: k, from: a?.player ?? null, to: b?.player ?? null, value: b?.value ?? null, points: s.config.awards[k].points });
     }
   }
   s.awards = next;

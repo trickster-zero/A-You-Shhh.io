@@ -3,7 +3,8 @@ import { createRng, rollDice, step } from './rng.js';
 import { generateBoard } from './board.js';
 import { createGame, applyAction, legalActions, actorOf, replay } from './state.js';
 import * as R from './rules.js';
-import { A } from './actions.js';
+import { A, ACTION_TYPES } from './actions.js';
+import { createQueue } from './animate.js';
 
 const NAMES = ['Isla', 'Corin', 'Wren'];
 
@@ -196,6 +197,169 @@ export function runTests(config) {
   return results;
 }
 
+/* ---------- Tests 10–13: events and the animation queue ---------- */
+const clone = o => JSON.parse(JSON.stringify(o));
+const keyOf = a => a.type === 'playCard' ? `playCard:${a.card}` : a.type === 'respondTrade' ? `respondTrade:${a.accept ? 'accept' : 'decline'}` : a.type;
+
+/** Collects events for every action type: seeded bot games, plus hand-made states for cards and trade answers. */
+function eventSamples(config) {
+  const seen = {};
+  const note = (action, next) => { (seen[keyOf(action)] ||= []).push(next.events); };
+  for (let i = 0; i < 12; i++) {
+    const rng = createRng(`ev-bot:${i}`);
+    let st = createGame(config, `ev:${i}`, NAMES);
+    for (let k = 0; k < 500 && st.phase !== 'over'; k++) { const a = botAction(st, rng); const n = applyAction(st, a); note(a, n); st = n; }
+  }
+  // A main-phase position with every card ready to play and resources to spare
+  const rng = createRng('ev-setup');
+  let st = createGame(config, 'ev-cards', NAMES);
+  while (st.phase === 'setup') st = applyAction(st, botAction(st, rng));
+  const main = clone(st);
+  Object.assign(main, { phase: 'main', current: 0, turn: 6, cardPlayed: false });
+  main.players.forEach(pl => { pl.hand = Object.fromEntries(config.resources.map(r => [r, 5])); });
+  main.players[0].cards = ['privateer', 'charter', 'windfall', 'embargo', 'monument'].map(type => ({ type, turn: 1 }));
+  const tryAct = (state, action) => { const n = applyAction(state, action); note(action, n); return n; };
+  const priv = tryAct(main, A.playCard(0, 'privateer'));
+  tryAct(priv, legalActions(priv)[0]);
+  const ch = tryAct(main, A.playCard(0, 'charter'));
+  tryAct(ch, A.finishCharter(0));
+  tryAct(main, A.playCard(0, 'windfall', { resources: ['iron', 'grain'] }));
+  tryAct(main, A.playCard(0, 'embargo', { resource: 'clay' }));
+  const offer = tryAct(main, A.proposeTrade(0, 1, { timber: 1 }, { iron: 1 }));
+  tryAct(offer, A.respondTrade(1, true));
+  tryAct(offer, A.respondTrade(1, false));
+  tryAct(main, A.maritimeTrade(0, 'timber', 'clay'));
+  tryAct(main, A.buyCard(0));
+  for (const type of ['buildRoad', 'buildSettlement', 'buildCity']) { const a = legalActions(main).find(x => x.type === type); if (a) tryAct(main, a); }
+  tryAct(main, A.endTurn(0));
+  // One step from victory: 3 cities + 3 settlements, then a city
+  const win = clone(main);
+  const vs = Object.keys(win.board.vertices).sort();
+  win.buildings = {}; win.roads = {};
+  [0, 2, 4].forEach(i => { win.buildings[vs[i * 6]] = { player: 0, kind: 'city' }; });
+  [1, 3, 5].forEach(i => { win.buildings[vs[i * 6]] = { player: 0, kind: 'settlement' }; });
+  win.players[0].built = { road: 0, settlement: 3, city: 3 };
+  win.players[0].cards = [];
+  win.awards = { longestRoad: null, harborMastery: null, largestFleet: null };
+  tryAct(win, A.buildCity(0, vs[6]));
+  return seen;
+}
+
+export function runEventTests(config) {
+  const results = [];
+  const add = (name, pass, details) => results.push({ name, pass: !!pass, details });
+  const guard = (name, fn) => { try { fn(); } catch (err) { add(name, false, `Threw: ${err.message}`); } };
+  let samples = null;
+
+  guard('10. Events: every action type returns an events array', () => {
+    samples = eventSamples(config);
+    const wanted = [...ACTION_TYPES.filter(t => !['playCard', 'respondTrade'].includes(t)),
+      ...['privateer', 'charter', 'windfall', 'embargo'].map(c => `playCard:${c}`), 'respondTrade:accept', 'respondTrade:decline'];
+    const missing = wanted.filter(k => !samples[k]);
+    const empty = wanted.filter(k => samples[k]?.some(evs => !Array.isArray(evs) || !evs.length));
+    const types = new Set(Object.values(samples).flat(2).map(e => e.type));
+    add('10. Events: every action type returns an events array', !missing.length && !empty.length,
+      missing.length || empty.length ? `Never seen: ${missing.join(', ') || 'none'}. Empty events: ${empty.join(', ') || 'none'}.`
+        : `${wanted.length} action kinds checked across ${Object.values(samples).reduce((n, l) => n + l.length, 0)} actions; each one returns a non-empty events array. Event types seen: ${[...types].sort().join(', ')}.`);
+  });
+
+  guard('11. Events: JSON-safe and they never affect the rules', () => {
+    samples ||= eventSamples(config);
+    const all = Object.values(samples).flat();
+    const jsonOk = all.every(evs => plainJsonEqual(JSON.parse(JSON.stringify(evs)), evs));
+    // Strip events before every action: the rules must reach the same state.
+    const rng1 = createRng('strip'), rng2 = createRng('strip');
+    let a = createGame(config, 'strip', NAMES), b = createGame(config, 'strip', NAMES);
+    let same = true, steps = 0;
+    for (; steps < 400 && a.phase !== 'over'; steps++) {
+      const act = botAction(a, rng1); botAction(b, rng2);
+      a = applyAction(a, act);
+      const bb = clone(b); delete bb.events; bb.events = [{ type: 'noise', junk: true }];
+      b = applyAction(bb, act);
+      const x = clone(a), y = clone(b); delete x.events; delete y.events;
+      if (JSON.stringify(x) !== JSON.stringify(y)) { same = false; break; }
+    }
+    add('11. Events: JSON-safe and they never affect the rules', jsonOk && same,
+      `All ${all.length} event lists round-trip through JSON: ${jsonOk}. Over ${steps} actions, replacing the events with junk before each action gives the same rules state: ${same}. Tests 1–8 above run unchanged.`);
+  });
+  return results;
+}
+
+/** A tiny model of what the panel shows, moved only by events. Used to prove the events are complete. */
+function panelModel(state) {
+  return { cards: state.players.map(p => R.handSize(p.hand)), dev: state.players.map(p => p.cards.length), vp: state.players.map((_, i) => R.publicPoints(state, i)) };
+}
+function settleModel(m, ev) {
+  const sum = c => Object.values(c || {}).reduce((a, b) => a + b, 0);
+  switch (ev.type) {
+    case 'production': ev.payouts.forEach(po => { m.cards[po.player] += po.amount; }); break;
+    case 'card_gained': m.cards[ev.player] += sum(ev.cards); break;
+    case 'card_lost': m.cards[ev.player] -= sum(ev.cards); break;
+    case 'steal': m.cards[ev.victim]--; m.cards[ev.player]++; break;
+    case 'trade': m.cards[ev.from] += sum(ev.get) - sum(ev.give); if (ev.to !== 'bank') m.cards[ev.to] += sum(ev.give) - sum(ev.get); break;
+    case 'piece_built': if (ev.kind !== 'road') m.vp[ev.player]++; break;
+    case 'award_changed': if (ev.from != null) m.vp[ev.from] -= ev.points; if (ev.to != null) m.vp[ev.to] += ev.points; break;
+    case 'dev_card_bought': m.dev[ev.player]++; break;
+    case 'card_played': m.dev[ev.player]--; break;
+    default: break;
+  }
+}
+
+export async function runQueueTests(config) {
+  const results = [];
+  // 12. Order and one at a time, including items pushed while the queue is running
+  try {
+    const log = [], pushed = [];
+    let active = 0, overlap = false;
+    const push = list => { pushed.push(...list.map(i => String(i.id))); q.push(list); };
+    const q = createQueue({
+      run: async item => {
+        active++; if (active > 1) overlap = true;
+        log.push(`start ${item.id}`);
+        await new Promise(r => setTimeout(r, item.ms));
+        if (item.spawn) push(item.spawn);
+        log.push(`end ${item.id}`);
+        active--;
+      }
+    });
+    const ms = [9, 1, 6, 0, 4, 2, 7, 3];
+    push(ms.slice(0, 4).map((m, i) => ({ id: i, ms: m, spawn: i === 1 ? [{ id: 'late', ms: 2 }] : null })));
+    const busyAfterPush = q.busy;
+    await new Promise(r => setTimeout(r, 3));
+    push(ms.slice(4).map((m, i) => ({ id: i + 4, ms: m })));
+    await q.whenIdle();
+    const order = log.filter(x => x.startsWith('start')).map(x => x.slice(6));
+    const expected = pushed;  // first in, first out, including items pushed mid-play
+    const alternates = log.every((x, i) => x.startsWith(i % 2 ? 'end' : 'start'));
+    const pass = !overlap && alternates && q.maxActive === 1 && JSON.stringify(order) === JSON.stringify(expected) && busyAfterPush && !q.busy;
+    results.push({ name: '12. Queue: plays in order, one at a time', pass,
+      details: `Played ${order.join(', ')} (expected ${expected.join(', ')}). Every start is followed by its end before the next starts: ${alternates}. Most running at once: ${q.maxActive}. Busy while playing: ${busyAfterPush}; idle after: ${!q.busy}.` });
+  } catch (err) { results.push({ name: '12. Queue: plays in order, one at a time', pass: false, details: `Threw: ${err.message}` }); }
+
+  // 13. Reduced motion: everything settles synchronously and the panel ends on the engine's state
+  try {
+    let ran = 0, model = null, mismatches = 0, notInstant = 0, steps = 0;
+    const q = createQueue({ run: async () => { ran++; }, settle: item => settleModel(model, item.event), reducedMotion: () => true });
+    const rng = createRng('still');
+    let st = createGame(config, 'still', NAMES);
+    for (; steps < 600 && st.phase !== 'over'; steps++) {
+      const next = applyAction(st, botAction(st, rng));
+      model = panelModel(st);
+      q.push(next.events.map(event => ({ event })));
+      if (q.busy) notInstant++;
+      if (JSON.stringify(model) !== JSON.stringify(panelModel(next))) mismatches++;
+      st = next;
+    }
+    let resolved = false;
+    q.whenIdle().then(() => { resolved = true; });
+    await Promise.resolve();
+    const pass = ran === 0 && notInstant === 0 && mismatches === 0 && resolved;
+    results.push({ name: '13. Reduced motion: the queue finishes at once with the right state', pass,
+      details: `${steps} actions. Animations played: ${ran}. Pushes still busy afterwards: ${notInstant}. Panel numbers (cards, dev cards, victory points) rebuilt only from events, compared with the engine after every action: ${mismatches} differences.` });
+  } catch (err) { results.push({ name: '13. Reduced motion: the queue finishes at once with the right state', pass: false, details: `Threw: ${err.message}` }); }
+  return results;
+}
+
 /* ---------- Test 9: layout (browser only) ---------- */
 const overlap = (a, b, pad = 0) => a.left < b.right - pad && b.left < a.right - pad && a.top < b.bottom - pad && b.top < a.bottom - pad;
 const visible = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'; };
@@ -276,8 +440,8 @@ if (typeof window === 'undefined' && typeof process !== 'undefined' && process.a
   const { readFileSync } = await import('node:fs');
   const load = n => JSON.parse(readFileSync(new URL(`../data/${n}.json`, import.meta.url), 'utf8'));
   const config = { ...load('config'), costs: load('costs') };
-  const results = runTests(config);
-  results.push({ name: '9. Layout at 1280 x 800 and 390 x 844, focus styles', pass: true, details: 'Browser only: open index.html?test.', browserOnly: true });
+  const results = [...runTests(config), ...runEventTests(config), ...(await runQueueTests(config))];
+  results.splice(8, 0, { name: '9. Layout at 1280 x 800 and 390 x 844, focus styles', pass: true, details: 'Browser only: open index.html?test.', browserOnly: true });
   for (const r of results) console.log(`${r.browserOnly ? 'SKIP' : r.pass ? 'PASS' : 'FAIL'}  ${r.name}\n      ${r.details}`);
   process.exitCode = results.every(r => r.pass) ? 0 : 1;
 }

@@ -15,7 +15,7 @@ python3 -m http.server 8000
 - `index.html?seed=abc` fills in the seed on the start screen.
 - `index.html?seed=abc&names=Ana,Ben,Cy` starts a game straight away.
 - `index.html?test` runs all tests in the browser, including the layout test.
-- `node game-islands/js/tests.js` runs tests 1–8 in Node (test 9 needs a browser).
+- `node game-islands/js/tests.js` runs tests 1–8 and 10–13 in Node (test 9 needs a browser).
 
 A game in progress is saved in the browser as seed + names + action list, and the start screen offers to resume it.
 
@@ -46,7 +46,8 @@ js/rules.js         pure rule helpers: placement, production, trade rates, longe
 js/actions.js       action constructors and readable error messages
 js/state.js         createGame, legalActions, applyAction, replay
 js/ui.js            the hot-seat interface (DOM only, no rules)
-js/tests.js         tests 1–8 (Node and browser) and 9 (browser layout)
+js/animate.js       animation queue (DOM-free) and effects: dice, card flights, pieces, robber, turn wipe, confetti
+js/tests.js         tests 1–8 and 10–13 (Node and browser) and 9 (browser layout)
 data/config.json    players, terrains, tokens, harbors, pieces, points, awards, cards, colors
 data/costs.json     build costs
 images/             textures, resource icons and piece silhouettes
@@ -66,6 +67,7 @@ state = applyAction(state, action);  // returns a new state, or throws an Error 
 - **Never mutates.** `applyAction` deep-copies the input; tests deep-freeze inputs to prove it.
 - **JSON-safe.** State and actions are plain JSON. `state.history` holds every action; `replay(config, seed, names, history)` rebuilds the exact same state.
 - **Who acts.** `actorOf(state)` is the player who must act now: the turn owner, a player who must discard, or the target of a trade offer.
+- **Events.** `state.events` lists what the last action changed (`roll`, `production`, `card_gained`, `card_lost`, `steal`, `robber_moved`, `piece_built`, `trade`, `turn_ended`, `award_changed`, `victory` and a few more). It is replaced on every action, is plain JSON, and no rule reads it. The UI turns events into animations.
 - **Templates.** Some legal actions are templates for the UI to fill in: `discard` (`count`), Windfall (`choose: 2`) and `proposeTrade`.
 
 ### Phase B sync notes
@@ -75,6 +77,10 @@ Because the engine is deterministic and actions are small JSON objects, the netw
 ## Assets
 
 All art is original to this project. Missing images are replaced by plain shapes and fills, with a `console.warn`, and the game keeps running. Piece images are white silhouettes tinted to the owner's color with an SVG mask; settlements and cities also carry the owner's letter, so color is never the only signal.
+
+## Animation
+
+`js/animate.js` holds a strict one-at-a-time queue. Each action's events become queue items; the board shows the new state at once while panel numbers catch up as each effect lands. Action buttons and board clicks are locked until the queue is empty. Effects use only transform and opacity (Web Animations API), and the confetti canvas removes itself. With `prefers-reduced-motion`, every item settles instantly and the final state is shown.
 
 ## Accessibility
 

@@ -3,6 +3,7 @@ import { createGame, applyAction, legalActions, actorOf, replay, playable } from
 import * as R from './rules.js';
 import { A } from './actions.js';
 import { hexCorners, seaHexes } from './board.js';
+import * as FX from './animate.js';
 
 const S = 56;                       // pixels per hex unit
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -61,6 +62,9 @@ const app = {
   mode: null,          // 'road' | 'settlement' | 'city' while choosing a spot
   seen: new Set(),     // pieces already drawn, so only new ones animate
   lastDice: null,
+  busy: false,         // true while the animation queue plays
+  display: null,       // panel numbers shown during animations; they catch up as each effect lands
+  logRendered: 0,
   view: { minX: 0, minY: 0 }
 };
 const resLabel = r => app.config.terrains[r]?.label ?? r;
@@ -115,14 +119,14 @@ function showStart() {
 function start(seed, names, { ready = false } = {}) {
   try { app.game = createGame(app.config, seed, names); }
   catch (err) { toast(err.message); return; }
-  app.names = names; app.mode = null; app.seen = new Set(); app.lastDice = null;
+  app.names = names; app.mode = null; app.seen = new Set(); app.lastDice = null; app.logRendered = 0; FX.removeBanner();
   app.viewer = ready ? actorOf(app.game) : null;
   enterGame();
 }
 function resume(saved) {
   try { app.game = replay(app.config, saved.seed, saved.names, saved.history); }
   catch (err) { console.warn('Saved game could not be replayed:', err.message); clearSave(); toast('That saved game could not be loaded.'); return; }
-  app.names = saved.names; app.mode = null; app.viewer = null; app.lastDice = JSON.stringify(app.game.dice);
+  app.names = saved.names; app.mode = null; app.viewer = null; app.lastDice = JSON.stringify(app.game.dice); app.logRendered = 0; FX.removeBanner();
   app.seen = new Set(pieceKeys(app.game));
   enterGame();
 }
@@ -145,11 +149,13 @@ function clearSave() { try { localStorage.removeItem(SAVE_KEY); } catch { /* ign
 
 /* ---------- acting ---------- */
 function act(action) {
-  try { app.game = applyAction(app.game, action); }
+  if (app.busy) return false;
+  const prev = app.game;
+  try { app.game = applyAction(prev, action); }
   catch (err) { toast(err.message); return false; }
   app.mode = null;
   save();
-  update();
+  present(prev, app.game);
   return true;
 }
 
@@ -213,7 +219,7 @@ function buildBoard() {
   const vertexLayer = s('g', { id: 'vertex-targets' }, Object.values(board.vertices).map(drawVertexTarget));
   svg.replaceChildren(defs, seaLayer, harborLayer, hexLayer,
     s('g', { id: 'roads', 'aria-hidden': 'true' }), s('g', { id: 'buildings', 'aria-hidden': 'true' }),
-    drawRobber(), edgeLayer, vertexLayer);
+    drawRobber(), s('g', { id: 'ghost', 'aria-hidden': 'true' }), edgeLayer, vertexLayer);
   svg.onkeydown = arrowNav;
 }
 const PIECE = { settlement: 30, city: 38, road: 48 };
@@ -232,6 +238,7 @@ function drawHex(hx) {
     s('polygon', { points: poly(corners), fill: 'url(#paper)', opacity: '.32', style: 'mix-blend-mode:multiply' }),
     s('polygon', { points: poly(inset), fill: 'none', stroke: 'url(#bevel)', 'stroke-width': 4 }),
     s('polygon', { class: 'hex-ring', points: poly(corners) }),
+    s('polygon', { class: 'hex-glow', points: poly(inset), fill: 'rgba(232,176,75,.32)', stroke: '#e8b04b', 'stroke-width': 3, opacity: 0 }),
     have[`icon-${hx.terrain}`]
       ? s('image', { class: 'terrain-icon', href: `images/icon-${hx.terrain}.png`, x: cx - 16, y: cy - 34, width: 32, height: 32 })
       : s('circle', { class: 'terrain-icon', cx, cy: cy - 18, r: 11, fill: 'rgba(10,14,19,.25)', stroke: 'rgba(233,228,218,.4)' }),
@@ -275,21 +282,23 @@ function drawEdgeTarget(e) {
   const r = s('rect', { class: 'edg', id: `edge-${e.id}`, role: 'button', tabindex: -1, 'data-x': mx, 'data-y': my, 'data-edge': e.id,
     x: -17, y: -6, width: 34, height: 12, rx: 5, transform: `translate(${f(mx)} ${f(my)}) rotate(${f(ang)})` });
   r.addEventListener('click', () => clickEdge(e.id));
+  ghostHandlers(r, () => ({ kind: 'road', x: mx, y: my, ang }));
   r.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); clickEdge(e.id); } });
   return r;
 }
 function drawVertexTarget(v) {
   const c = s('circle', { class: 'vtx', id: `vtx-${v.id}`, role: 'button', tabindex: -1, 'data-x': v.x * S, 'data-y': v.y * S, 'data-vertex': v.id, cx: f(v.x * S), cy: f(v.y * S), r: 11 });
   c.addEventListener('click', () => clickVertex(v.id));
+  ghostHandlers(c, () => ({ kind: app.mode === 'city' ? 'city' : 'settlement', x: v.x * S, y: v.y * S, ang: 0 }));
   c.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); clickVertex(v.id); } });
   return c;
 }
 function drawRobber() {
-  return s('g', { id: 'robber', 'aria-hidden': 'true' },
+  return s('g', { id: 'robber', 'aria-hidden': 'true' }, s('g', { id: 'robber-body' },
     s('ellipse', { cx: 0, cy: 17, rx: 14, ry: 3.5, fill: 'rgba(0,0,0,.45)' }),
     s('path', { d: 'M0,-21 C9,-21 13,-13 13,-5 C13,3 16,10 17,17 L-17,17 C-16,10 -13,3 -13,-5 C-13,-13 -9,-21 0,-21 Z', fill: '#151b23', stroke: '#3a4350', 'stroke-width': 1.2 }),
     s('path', { d: 'M0,-15 C5,-15 7,-10 7,-6 C7,-1 4,2 0,2 C-4,2 -7,-1 -7,-6 C-7,-10 -5,-15 0,-15 Z', fill: '#05070a' }),
-    s('path', { d: 'M-13,-5 C-8,0 8,0 13,-5', fill: 'none', stroke: '#2a323d', 'stroke-width': 1 }));
+    s('path', { d: 'M-13,-5 C-8,0 8,0 13,-5', fill: 'none', stroke: '#2a323d', 'stroke-width': 1 })));
 }
 
 /* ---------- board: dynamic layer ---------- */
@@ -312,6 +321,9 @@ function targets() {
   return t;
 }
 
+const motionOn = () => !FX.prefersReducedMotion();
+const pendingClass = key => (!app.seen.has(key) && app.busy && motionOn() ? 'fx-pending' : '');
+
 function renderBoard(t) {
   const g = app.game, B = g.board;
   const hidden = app.viewer !== actorOf(g);
@@ -324,7 +336,7 @@ function renderBoard(t) {
     const body = have['piece-road']
       ? s('rect', { x: -PIECE.road / 2, y: -PIECE.road / 2, width: PIECE.road, height: PIECE.road, fill: colorOf(p), mask: 'url(#mask-road)' })
       : s('rect', { x: -21, y: -5, width: 42, height: 10, rx: 4, fill: colorOf(p) });
-    return s('g', { transform: `translate(${f(mx)} ${f(my)}) rotate(${f(ang)})` }, s('g', { class: app.seen.has(key) ? '' : 'pop', filter: 'url(#piece-edge)' }, body));
+    return s('g', { transform: `translate(${f(mx)} ${f(my)}) rotate(${f(ang)})` }, s('g', { class: pendingClass(key), 'data-key': key, filter: 'url(#piece-edge)' }, body));
   }));
   builds.replaceChildren(...Object.entries(g.buildings).map(([vid, b]) => {
     const v = B.vertices[vid], x = v.x * S, y = v.y * S, k = b.kind, size = PIECE[k];
@@ -333,7 +345,7 @@ function renderBoard(t) {
       ? s('rect', { x: -size / 2, y: -size / 2, width: size, height: size, fill: colorOf(b.player), mask: `url(#mask-${k})` })
       : s('path', { d: k === 'city' ? 'M-15,13 L-15,-3 L-6,-11 L3,-3 L3,-6 L15,-6 L15,13 Z' : 'M-11,11 L-11,-2 L0,-12 L11,-2 L11,11 Z', fill: colorOf(b.player) });
     return s('g', { transform: `translate(${f(x)} ${f(y)})` },
-      s('g', { class: app.seen.has(key) ? '' : 'pop' },
+      s('g', { class: pendingClass(key), 'data-key': key },
         s('g', { filter: 'url(#piece-edge)' }, body),
         s('circle', { cx: size * .3, cy: size * .3, r: 7, fill: '#0a0e13', stroke: colorOf(b.player), 'stroke-width': 1.5 }),
         s('text', { x: size * .3, y: size * .3 + 3.2, 'text-anchor': 'middle', 'font-size': 9, 'font-weight': 600, fill: '#e9e4da' }, letterOf(b.player))));
@@ -415,7 +427,7 @@ function arrowNav(ev) {
 /* ---------- board clicks ---------- */
 function clickVertex(v) {
   const g = app.game;
-  if (app.viewer !== actorOf(g)) return;
+  if (app.busy || app.viewer !== actorOf(g)) return;
   const a = targets().legal.find(x => x.vertex === v && (
     (g.phase === 'setup' && x.type === 'placeSettlement') ||
     (app.mode === 'settlement' && x.type === 'buildSettlement') ||
@@ -424,7 +436,7 @@ function clickVertex(v) {
 }
 function clickEdge(e) {
   const g = app.game;
-  if (app.viewer !== actorOf(g)) return;
+  if (app.busy || app.viewer !== actorOf(g)) return;
   const a = targets().legal.find(x => x.edge === e && (
     (g.phase === 'setup' && x.type === 'placeRoad') ||
     (g.phase === 'charter' && x.type === 'buildRoad') ||
@@ -433,7 +445,7 @@ function clickEdge(e) {
 }
 function clickHex(hexId) {
   const g = app.game;
-  if (app.viewer !== actorOf(g) || g.phase !== 'robber') return;
+  if (app.busy || app.viewer !== actorOf(g) || g.phase !== 'robber') return;
   const options = legalActions(g).filter(a => a.type === 'moveRobber' && a.hex === hexId);
   if (!options.length) return;
   if (options.length === 1) { act(options[0]); return; }
@@ -458,6 +470,7 @@ function update() {
 function render() {
   const g = app.game;
   const t = targets();
+  hideGhost();
   renderBoard(t);
   renderPanel(t);
 }
@@ -489,6 +502,8 @@ function renderPanel(t) {
   const actor = actorOf(g);
   const me = app.viewer;
   const shown = me !== null && me === actor;
+  $('panel').style.setProperty('--turn-color', colorOf(g.current));
+  const d = app.display || displayFrom(g);
   $('turn-info').textContent = g.phase === 'setup' ? `Setup · seed ${g.seed}` : `Turn ${g.turn} · seed ${g.seed}`;
 
   // Current
@@ -503,13 +518,13 @@ function renderPanel(t) {
     const pub = R.publicPoints(g, i), hid = R.hiddenPoints(g, i);
     const awards = Object.keys(g.config.awards).filter(k => g.awards[k]?.player === i);
     const showHidden = shown && i === me && hid > 0;
-    return h('li', { class: i === g.current ? 'turn' : '', 'aria-label': `${pl.name}: ${pub} victory points${showHidden ? ` plus ${hid} hidden` : ''}, ${R.handSize(pl.hand)} resource cards, ${pl.cards.length} development cards${awards.length ? `, holds ${awards.map(k => g.config.awards[k].label).join(' and ')}` : ''}${i === g.current ? ', taking this turn' : ''}` },
+    return h('li', { class: i === g.current ? 'turn' : '', 'data-player': i, 'aria-label': `${pl.name}: ${pub} victory points${showHidden ? ` plus ${hid} hidden` : ''}, ${R.handSize(pl.hand)} resource cards, ${pl.cards.length} development cards${awards.length ? `, holds ${awards.map(k => g.config.awards[k].label).join(' and ')}` : ''}${i === g.current ? ', taking this turn' : ''}` },
       chip(i),
       h('div', {},
         h('div', { class: 'pname' }, pl.name, i === g.current ? h('small', {}, 'turn') : null),
-        h('div', { class: 'meta' }, `${plural(R.handSize(pl.hand), 'card')} · ${pl.cards.length} dev · ${plural(pl.played.privateer, 'privateer')}`,
+        h('div', { class: 'meta' }, h('span', { 'data-count': i }, plural(d.cards[i], 'card')), ' · ', h('span', { 'data-dev': i }, `${d.dev[i]} dev`), ` · ${plural(pl.played.privateer, 'privateer')}`,
           awards.map(k => h('span', { class: 'award', title: g.config.awards[k].label }, g.config.awards[k].label)))),
-      h('div', { class: 'vp' }, String(pub + (showHidden ? hid : 0)), h('small', {}, showHidden ? `VP (${hid} hidden)` : 'VP')));
+      h('div', { class: 'vp' }, h('span', { 'data-vp': i }, String(d.vp[i] + (showHidden ? hid : 0))), h('small', {}, showHidden ? `VP (${hid} hidden)` : 'VP')));
   }));
 
   // Hand
@@ -517,8 +532,8 @@ function renderPanel(t) {
   $('hand').classList.toggle('hidden-hand', !shown);
   $('hand').setAttribute('aria-label', shown ? `${nameOf(me)}'s hand` : 'Hand hidden');
   $('tiles').replaceChildren(...g.config.resources.map(r => {
-    const n = hand ? hand[r] : 0;
-    return h('div', { class: `tile${n ? '' : ' zero'}`, role: 'img', 'aria-label': shown ? `${resLabel(r)}: ${n}` : `${resLabel(r)}: hidden` },
+    const n = hand ? (d.hand && d.viewer === me ? d.hand[r] : hand[r]) : 0;
+    return h('div', { class: `tile${n ? '' : ' zero'}`, 'data-tile': r, role: 'img', 'aria-label': shown ? `${resLabel(r)}: ${n}` : `${resLabel(r)}: hidden` },
       resIcon(r), h('span', { class: 'rname' }, resLabel(r)), h('span', { class: 'count' }, shown ? String(n) : '–'));
   }));
   const cards = shown ? groupCards(g.players[me].cards) : [];
@@ -529,14 +544,13 @@ function renderPanel(t) {
     return h('div', { class: 'card-row' },
       h('div', {}, h('span', { class: 'cname' }, `${def.label}${list.length > 1 ? ` ×${list.length}` : ''}`), h('span', { class: 'ctext' }, def.text)),
       type === 'monument' ? h('span', { class: 'meta', style: 'font-size:11px;color:var(--brass)' }, `+${list.length} VP`)
-        : h('button', { class: 'btn', type: 'button', disabled: !can, title: fresh ? 'Bought this turn: play it from your next turn.' : g.cardPlayed ? 'One card per turn.' : '', onclick: () => playCard(type) }, 'Play'));
+        : h('button', { class: 'btn', type: 'button', disabled: !can || app.busy, title: fresh ? 'Bought this turn: play it from your next turn.' : g.cardPlayed ? 'One card per turn.' : '', onclick: () => playCard(type) }, 'Play'));
   }));
 
   // Dice
   const dkey = JSON.stringify(g.dice);
-  const tumble = g.dice && dkey !== app.lastDice;
   app.lastDice = dkey;
-  [0, 1].forEach(i => drawDie($(`die${i}`), g.dice?.[i], tumble));
+  [0, 1].forEach(i => drawDie($(`die${i}`), g.dice?.[i]));
   $('dice').setAttribute('aria-label', g.dice ? `Dice: ${g.dice[0]} and ${g.dice[1]}` : 'Dice not rolled this turn');
   $('dice-total').replaceChildren(...(g.dice ? [String(g.dice[0] + g.dice[1]), h('small', {}, g.dice[0] + g.dice[1] === 7 ? 'The robber moves' : 'rolled')] : [h('small', {}, g.phase === 'setup' ? 'Setup' : 'Not rolled')]));
 
@@ -544,9 +558,7 @@ function renderPanel(t) {
   $('actions').replaceChildren(...(shown ? actionButtons(g, me, t) : [h('p', { class: 'hint' }, 'Waiting for the next player.')]));
 
   // Log
-  const log = $('log');
-  log.replaceChildren(...g.log.slice(-60).map(line => h('li', {}, line)));
-  log.scrollTop = log.scrollHeight;
+  renderLog(g);
 }
 function groupCards(cards) {
   const m = new Map();
@@ -554,17 +566,16 @@ function groupCards(cards) {
   return [...m.entries()];
 }
 const PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
-function drawDie(el, v, tumble) {
+function drawDie(el, v) {
   el.replaceChildren(...Array.from({ length: 9 }, (_, i) => h('i', { style: v && PIPS[v].includes(i) ? 'visibility:visible' : '' })));
   el.classList.toggle('blank', !v);
-  if (tumble) { el.classList.remove('tumble'); void el.getBoundingClientRect(); el.classList.add('tumble'); }
 }
 
 function actionButtons(g, me, t) {
   const L = t.legal;
   const has = type => L.some(a => a.type === type);
   const btn = (label, onClick, { primary = false, disabled = false, wide = false, cost = null, on = false, title = '' } = {}) =>
-    h('button', { class: `btn${primary ? ' primary' : ''}${wide ? ' wide' : ''}${on ? ' on' : ''}`, type: 'button', disabled, title: title || null, 'aria-pressed': on ? 'true' : null, onclick: onClick },
+    h('button', { class: `btn${primary ? ' primary' : ''}${wide ? ' wide' : ''}${on ? ' on' : ''}`, type: 'button', disabled: disabled || app.busy, title: title || null, 'aria-pressed': on ? 'true' : null, onclick: onClick },
       label, cost ? h('span', { class: 'cost' }, cost) : null);
   const cost = k => R.costLabel(g, g.config.costs[k]);
   switch (g.phase) {
@@ -760,14 +771,267 @@ function showGameOver() {
     cancellable: false,
     body: [h('p', {}, g.log.at(-1)),
       h('ol', { class: 'standings' }, rows.map(r => h('li', {}, chip(r.i), nameOf(r.i), h('b', {}, `${r.pub + r.hid} VP${r.hid ? ` (${r.hid} from Monuments)` : ''}`))))],
-    actions: [{ label: 'View the board', onClick: closeDialog }, { label: 'New game', primary: true, onClick: () => { closeDialog(); showStart(); } }]
+    actions: [{ label: 'View the board', onClick: closeDialog }, { label: 'New game', primary: true, onClick: () => { closeDialog(); FX.removeBanner(); showStart(); } }]
+  });
+}
+
+/* ---------- log ---------- */
+function lineColor(line) {
+  if (/^It's /.test(line)) return null;
+  const p = app.game.players.find(pl => line.startsWith(`${pl.name} `) || line.startsWith(`${pl.name}'`));
+  return p ? colorOf(p.id) : null;
+}
+function renderLog(g) {
+  const log = $('log');
+  const total = g.log.length;
+  const fresh = app.logRendered > 0 && app.logRendered <= total && log.children.length;
+  const lineEl = (line, cls = '') => { const c = lineColor(line); return h('li', { class: cls, style: c ? `--bar:${c}` : null }, line); };
+  if (!fresh) {
+    log.replaceChildren(...g.log.slice(-60).map(l => lineEl(l)));
+  } else if (total > app.logRendered) {
+    log.querySelectorAll('li.fresh').forEach(li => li.classList.remove('fresh'));
+    const added = g.log.slice(app.logRendered);
+    added.forEach((l, i) => log.append(lineEl(l, `new${i === added.length - 1 ? ' fresh' : ''}`)));
+    while (log.children.length > 60) log.firstElementChild.remove();
+  }
+  app.logRendered = total;
+  log.scrollTop = log.scrollHeight;
+}
+
+/* ---------- ghost pieces on hover ---------- */
+function ghostHandlers(el, where) {
+  const show = () => { if (el.classList.contains('legal') && !app.busy) showGhost(where()); };
+  el.addEventListener('pointerenter', show);
+  el.addEventListener('focus', show);
+  el.addEventListener('pointerleave', hideGhost);
+  el.addEventListener('blur', hideGhost);
+}
+function showGhost({ kind, x, y, ang }) {
+  const who = actorOf(app.game);
+  if (who == null) return;
+  const size = PIECE[kind], color = colorOf(who);
+  const body = have[`piece-${kind}`]
+    ? s('rect', { x: -size / 2, y: -size / 2, width: size, height: size, fill: color, mask: `url(#mask-${kind})` })
+    : kind === 'road' ? s('rect', { x: -21, y: -5, width: 42, height: 10, rx: 4, fill: color })
+      : s('path', { d: kind === 'city' ? 'M-15,13 L-15,-3 L-6,-11 L3,-3 L3,-6 L15,-6 L15,13 Z' : 'M-11,11 L-11,-2 L0,-12 L11,-2 L11,11 Z', fill: color });
+  $('ghost').replaceChildren(s('g', { transform: `translate(${f(x)} ${f(y)}) rotate(${f(ang)})`, opacity: .4 }, body));
+}
+function hideGhost() { $('ghost')?.replaceChildren(); }
+
+/* ---------- animation and feedback ---------- */
+const vpShown = (g, i) => R.publicPoints(g, i);
+function displayFrom(g) {
+  const me = app.viewer;
+  return {
+    viewer: me,
+    cards: g.players.map(pl => R.handSize(pl.hand)),
+    dev: g.players.map(pl => pl.cards.length),
+    vp: g.players.map((_, i) => vpShown(g, i)),
+    hand: me != null ? { ...g.players[me].hand } : null
+  };
+}
+const sumCards = c => Object.values(c || {}).reduce((a, b) => a + b, 0);
+const rowEl = p => document.querySelector(`#players li[data-player="${p}"]`);
+const countEl = p => document.querySelector(`[data-count="${p}"]`);
+const tileEl = r => document.querySelector(`[data-tile="${r}"]`);
+const handVisible = p => app.viewer === p && actorOf(app.game) === p;
+const iconSrc = r => (have[`icon-${r}`] ? `images/icon-${r}.png` : null);
+
+/** Move panel numbers toward the final state. `bump` pulses what changed. */
+function shift(p, cardsDelta, { hand = null, vp = 0, dev = 0, bump = true } = {}) {
+  const d = app.display;
+  if (!d) return;
+  if (cardsDelta) {
+    d.cards[p] += cardsDelta;
+    const el = countEl(p);
+    if (el) { el.textContent = plural(d.cards[p], 'card'); if (bump) FX.pulse(el); }
+  }
+  if (hand && d.hand && d.viewer === p) {
+    for (const [r, n] of Object.entries(hand)) {
+      d.hand[r] += n;
+      const t = tileEl(r);
+      if (t && handVisible(p)) { t.querySelector('.count').textContent = String(d.hand[r]); t.classList.toggle('zero', !d.hand[r]); if (bump) FX.pulse(t, 1.12); }
+    }
+  }
+  if (vp) {
+    d.vp[p] += vp;
+    const el = document.querySelector(`[data-vp="${p}"]`);
+    if (el) { el.textContent = String(d.vp[p] + (handVisible(p) ? R.hiddenPoints(app.game, p) : 0)); if (bump) FX.pulse(el, 1.4); }
+  }
+  if (dev) {
+    d.dev[p] += dev;
+    const el = document.querySelector(`[data-dev="${p}"]`);
+    if (el) { el.textContent = `${d.dev[p]} dev`; if (bump) FX.pulse(el); }
+  }
+}
+const neg = c => Object.fromEntries(Object.entries(c).map(([r, n]) => [r, -n]));
+const addC = (a, b) => { const o = { ...a }; for (const [r, n] of Object.entries(b)) o[r] = (o[r] || 0) + n; return o; };
+const pieceVp = ev => (ev.kind === 'road' ? 0 : 1);   // a city replaces a settlement: net +1
+
+/** The end result of one event, with no motion. */
+function settle({ event: ev }) {
+  const opt = { bump: false };
+  switch (ev.type) {
+    case 'production': for (const po of ev.payouts) shift(po.player, po.amount, { ...opt, hand: { [po.resource]: po.amount } }); break;
+    case 'card_gained': shift(ev.player, sumCards(ev.cards), { ...opt, hand: ev.cards }); break;
+    case 'card_lost': shift(ev.player, -sumCards(ev.cards), { ...opt, hand: neg(ev.cards) }); break;
+    case 'steal': shift(ev.victim, -1, { ...opt, hand: { [ev.resource]: -1 } }); shift(ev.player, 1, { ...opt, hand: { [ev.resource]: 1 } }); break;
+    case 'trade':
+      shift(ev.from, sumCards(ev.get) - sumCards(ev.give), { ...opt, hand: addC(neg(ev.give), ev.get) });
+      if (ev.to !== 'bank') shift(ev.to, sumCards(ev.give) - sumCards(ev.get), { ...opt, hand: addC(neg(ev.get), ev.give) });
+      break;
+    case 'piece_built': shift(ev.player, 0, { ...opt, vp: pieceVp(ev) }); break;
+    case 'dev_card_bought': shift(ev.player, 0, { ...opt, dev: 1 }); break;
+    case 'card_played': shift(ev.player, 0, { ...opt, dev: -1 }); break;
+    case 'award_changed':
+      if (ev.from != null) shift(ev.from, 0, { ...opt, vp: -ev.points });
+      if (ev.to != null) shift(ev.to, 0, { ...opt, vp: ev.points });
+      break;
+    case 'robber_moved': $('robber-body')?.classList.remove('fx-pending'); break;
+    case 'victory': FX.banner(`${nameOf(ev.player)} wins`, colorOf(ev.player), { animate: false }); break;
+    default: break;
+  }
+  if (ev.type === 'piece_built') document.querySelector(`[data-key="${pieceKey(ev)}"]`)?.classList.remove('fx-pending');
+}
+const pieceKey = ev => (ev.kind === 'road' ? `r:${ev.edge}` : `b:${ev.vertex}:${ev.kind}`);
+
+/** Where a player's cards land: their hand tiles if they hold the device, else their row. */
+function landingRect(p, resource) {
+  const t = resource && handVisible(p) ? tileEl(resource) : null;
+  const r = (t || countEl(p) || rowEl(p))?.getBoundingClientRect();
+  return r && FX.onScreen(r) ? r : null;
+}
+function floatChanges(p, cards, sign, { at = null } = {}) {
+  const entries = Object.entries(cards).filter(([, n]) => n > 0);
+  return Promise.all(entries.map(([r, n], i) => {
+    const rect = at || landingRect(p, r);
+    return rect ? FX.floatText(rect, `${sign}${n}`, colorOf(p), { delay: i * 90, icon: iconSrc(r) }) : null;
+  }));
+}
+
+/** Play one event. Resolves when its motion is done. */
+async function run(item) {
+  const ev = item.event;
+  const g = app.game;
+  switch (ev.type) {
+    case 'roll':
+      return FX.rollDice([$('die0'), $('die1')], ev.dice, drawDie);
+    case 'production': {
+      const hexes = [...new Set(ev.payouts.map(po => po.hex))];
+      const glow = FX.glowHexes(hexes.map(id => document.querySelector(`#hex-${id} .hex-glow`)).filter(Boolean));
+      const flights = ev.payouts.map((po, i) => {
+        const from = document.querySelector(`#hex-${po.hex} .token-disc`)?.getBoundingClientRect();
+        const to = landingRect(po.player, po.resource);
+        const land = () => { shift(po.player, po.amount, { hand: { [po.resource]: po.amount } }); return FX.floatText(to || from, `+${po.amount}`, colorOf(po.player), { icon: iconSrc(po.resource) }); };
+        if (!from || !to) return new Promise(r => setTimeout(r, i * 90)).then(land);
+        return FX.flyCard(from, to, { icon: iconSrc(po.resource), color: colorOf(po.player), duration: 150 + (i % 5) * 25, delay: i * 90 }).then(land);
+      });
+      return Promise.all([glow, ...flights]);
+    }
+    case 'card_gained':
+      shift(ev.player, sumCards(ev.cards), { hand: ev.cards });
+      return floatChanges(ev.player, ev.cards, '+');
+    case 'card_lost':
+      shift(ev.player, -sumCards(ev.cards), { hand: neg(ev.cards) });
+      return floatChanges(ev.player, ev.cards, '−');
+    case 'robber_moved': {
+      const body = $('robber-body');
+      body.classList.remove('fx-pending');
+      const rect = document.querySelector(`#hex-${ev.to} .hex-fill`)?.getBoundingClientRect();
+      return FX.dropRobber(body, rect ? { left: rect.left + rect.width / 2 - 20, top: rect.top + rect.height / 2 - 18, width: 40, height: 20, right: 0, bottom: 0 } : null);
+    }
+    case 'steal': {
+      const from = landingRect(ev.victim), to = landingRect(ev.player);
+      const land = () => {
+        shift(ev.victim, -1, { hand: { [ev.resource]: -1 } });
+        shift(ev.player, 1, { hand: { [ev.resource]: 1 } });
+        return Promise.all([from && FX.floatText(from, '−1', colorOf(ev.victim)), to && FX.floatText(to, '+1', colorOf(ev.player))]);
+      };
+      if (!from || !to) return land();
+      return FX.flyCard(from, to, { back: true, color: colorOf(ev.player), duration: 480, arc: 30 }).then(land);
+    }
+    case 'piece_built': {
+      const el = document.querySelector(`[data-key="${pieceKey(ev)}"]`);
+      const anim = el ? FX.buildPiece(el, ev.kind) : Promise.resolve();
+      return anim.then(() => shift(ev.player, 0, { vp: pieceVp(ev) }));
+    }
+    case 'dev_card_bought': {
+      shift(ev.player, 0, { dev: 1 });
+      const at = landingRect(ev.player);
+      return at ? FX.floatText(at, '+1 card', colorOf(ev.player)) : null;
+    }
+    case 'card_played': {
+      shift(ev.player, 0, { dev: -1 });
+      const at = landingRect(ev.player);
+      return at ? FX.floatText(at, g.config.cards[ev.card].label, colorOf(ev.player)) : null;
+    }
+    case 'trade': {
+      const give = Object.keys(ev.give)[0], get = Object.keys(ev.get)[0];
+      const a = landingRect(ev.from);
+      const b = ev.to === 'bank' ? document.querySelector('.panel-head h1')?.getBoundingClientRect() : landingRect(ev.to);
+      const land = () => {
+        shift(ev.from, sumCards(ev.get) - sumCards(ev.give), { hand: addC(neg(ev.give), ev.get) });
+        if (ev.to !== 'bank') shift(ev.to, sumCards(ev.give) - sumCards(ev.get), { hand: addC(neg(ev.get), ev.give) });
+      };
+      if (!a || !b) { land(); return; }
+      const colorB = ev.to === 'bank' ? '#c9a57a' : colorOf(ev.to);
+      await Promise.all([
+        FX.flyCard(a, b, { icon: iconSrc(give), color: colorOf(ev.from), duration: 500, arc: 70 }),
+        FX.flyCard(b, a, { icon: iconSrc(get), color: colorB, duration: 500, arc: -50 })
+      ]);
+      land();
+      return;
+    }
+    case 'award_changed': {
+      if (ev.from != null) shift(ev.from, 0, { vp: -ev.points });
+      if (ev.to == null) return;
+      shift(ev.to, 0, { vp: ev.points });
+      const at = landingRect(ev.to);
+      return at ? FX.floatText(at, g.config.awards[ev.award].label, colorOf(ev.to)) : null;
+    }
+    case 'turn_ended': {
+      await FX.turnWipe({ color: colorOf(ev.next), letter: letterOf(ev.next), name: nameOf(ev.next) });
+      const panel = $('panel');
+      panel.style.setProperty('--turn-color', colorOf(ev.next));
+      const phone = matchMedia('(max-width: 760px)').matches;
+      return panel.animate([{ transform: phone ? 'scaleX(0)' : 'scaleY(0)' }, { transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.2,.7,.2,1)', pseudoElement: '::before' }).finished.catch(() => {});
+    }
+    case 'victory':
+      return Promise.all([
+        FX.confetti([...g.config.colors.map(c => c.hex), '#e8b04b', '#c9a57a', '#e8dcc4', '#8fd3ff']),
+        FX.banner(`${nameOf(ev.player)} wins`, colorOf(ev.player))
+      ]);
+    default:
+      return null;
+  }
+}
+
+const queue = FX.createQueue({ run, settle, reducedMotion: FX.prefersReducedMotion });
+
+/** Draw the new state, then play its events. Buttons stay disabled until the queue is empty. */
+function present(prev, next) {
+  const events = next.events || [];
+  if (!events.length) { update(); return; }
+  app.busy = true;
+  document.body.classList.add('animating');
+  app.display = displayFrom(prev);
+  // the viewer's hand count lives in the same display; only the viewer's own hand is ever shown
+  if (motionOn() && events.some(e => e.type === 'robber_moved')) $('robber-body').classList.add('fx-pending');
+  render();
+  queue.push(events.map(event => ({ event })));
+  queue.whenIdle().then(() => {
+    app.busy = false;
+    document.body.classList.remove('animating');
+    app.display = null;
+    $('robber-body')?.classList.remove('fx-pending');
+    update();
   });
 }
 
 /* ---------- test page ---------- */
 async function runTestPage() {
   $('tests').hidden = false;
-  const { runTests, layoutTest } = await import('./tests.js');
+  const { runTests, layoutTest, runEventTests, runQueueTests } = await import('./tests.js');
   const list = $('test-list');
   const show = r => list.append(h('li', { class: r.pass ? 'pass' : 'fail' }, h('span', { class: 'tag' }, r.pass ? 'PASS' : 'FAIL'), h('b', {}, r.name), h('p', {}, r.details)));
   const results = runTests(app.config);
@@ -776,6 +1040,9 @@ async function runTestPage() {
   const layout = await layoutTest();
   show(layout);
   results.push(layout);
+  const more = [...runEventTests(app.config), ...(await runQueueTests(app.config))];
+  more.forEach(show);
+  results.push(...more);
   const passed = results.filter(r => r.pass).length;
   $('tests-summary').textContent = `${passed} of ${results.length} tests pass.`;
   document.body.dataset.tests = passed === results.length ? 'pass' : 'fail';
