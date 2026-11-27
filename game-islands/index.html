@@ -21,8 +21,11 @@
 
     <aside class="panel" id="panel" aria-label="Game panel" tabindex="-1">
       <header class="panel-head">
-        <h1>The Frontier Archipelago</h1>
-        <p class="turn-info" id="turn-info"></p>
+        <div>
+          <h1>The Frontier Archipelago</h1>
+          <p class="turn-info" id="turn-info"></p>
+        </div>
+        <button type="button" class="btn ghost theme-toggle">Day</button>
       </header>
       <section class="current" id="current" aria-live="polite"></section>
       <section class="players" aria-label="Players"><ul id="players"></ul></section>
@@ -70,7 +73,7 @@
           <button type="submit" class="btn primary">Start</button>
         </div>
       </form>
-      <p class="foot"><a href="?test">Run the tests</a></p>
+      <p class="foot"><a href="?test">Run the tests</a> · <button type="button" class="btn ghost theme-toggle">Day</button></p>
     </div>
   </section>
 

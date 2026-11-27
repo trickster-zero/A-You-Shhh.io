@@ -142,8 +142,8 @@ export async function rollDice(slotEls, finalFaces, drawFace) {
 }
 
 /** Amber glow over hexes that produced. */
-export function glowHexes(els) {
-  return Promise.all(els.map(el => done(el.animate([{ opacity: 0 }, { opacity: .9, offset: .3 }, { opacity: 0 }], { duration: T(700), easing: 'ease-out' }))));
+export function glowHexes(els, ms = 700) {
+  return Promise.all(els.map(el => done(el.animate([{ opacity: 0 }, { opacity: .9, offset: .3 }, { opacity: 0 }], { duration: T(ms), easing: 'ease-out' }))));
 }
 
 /** Robber drop with a dust puff. `puffAt` is a screen rect under the robber. */

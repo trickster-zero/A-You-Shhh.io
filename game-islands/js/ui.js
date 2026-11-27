@@ -75,12 +75,31 @@ const chip = (p, big = false) => h('span', { class: `chip${big ? ' big' : ''}`, 
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const handText = c => Object.entries(c).filter(([, n]) => n > 0).map(([r, n]) => `${n} ${resLabel(r)}`).join(', ');
 
+/* ---------- theme (night is the default; day is opt-in and remembered in this browser) ---------- */
+const THEME_KEY = 'islands.theme';
+function setTheme(t) {
+  if (t === 'day') document.documentElement.dataset.theme = 'day'; else delete document.documentElement.dataset.theme;
+  try { localStorage.setItem(THEME_KEY, t); } catch { /* ignore */ }
+  document.querySelectorAll('.theme-toggle').forEach(b => {
+    b.textContent = t === 'day' ? 'Night' : 'Day';
+    b.setAttribute('aria-label', t === 'day' ? 'Switch to the night theme' : 'Switch to the day theme');
+  });
+}
+function initTheme() {
+  let t = 'night';
+  try { t = localStorage.getItem(THEME_KEY) || 'night'; } catch { /* ignore */ }
+  if (params.get('theme') === 'day' || params.get('theme') === 'night') t = params.get('theme');
+  document.querySelectorAll('.theme-toggle').forEach(b => { b.onclick = () => setTheme(document.documentElement.dataset.theme === 'day' ? 'night' : 'day'); });
+  setTheme(t);
+}
+
 /* ---------- start ---------- */
 async function init() {
   const [config, costs] = await Promise.all(['config', 'costs'].map(n => fetch(`data/${n}.json`).then(r => r.json())));
   app.config = { ...config, costs };
   app.config.colors.forEach((c, i) => document.documentElement.style.setProperty(`--p${i}`, c.hex));
   await checkAssets();
+  initTheme();
   document.body.classList.toggle('no-sea-texture', !have['texture-sea']);
 
   if (params.has('test')) return runTestPage();
@@ -213,11 +232,15 @@ function buildBoard() {
   const seaLayer = s('g', { class: 'sea-hexes', 'aria-hidden': 'true' },
     sea.map(x => s('polygon', { points: poly(hexCorners(x.q, x.r)), fill: 'url(#seatex)', 'fill-opacity': '.28', stroke: 'rgba(143,211,255,.08)', 'stroke-width': 1 })));
 
+  const beach = s('g', { id: 'beach', 'aria-hidden': 'true' }, board.hexes.map(hx => {
+    const cs = hexCorners(hx.q, hx.r).map(c => ({ x: hx.x + (c.x - hx.x) * 1.2, y: hx.y + (c.y - hx.y) * 1.2 }));
+    return s('polygon', { points: poly(cs), fill: '#ead9ad', stroke: '#ead9ad', 'stroke-width': 6, 'stroke-linejoin': 'round' });
+  }));
   const hexLayer = s('g', { id: 'hexes' }, board.hexes.map(drawHex));
   const harborLayer = s('g', { id: 'harbors', 'aria-hidden': 'true' }, board.harbors.map(drawHarbor));
   const edgeLayer = s('g', { id: 'edge-targets' }, Object.values(board.edges).map(drawEdgeTarget));
   const vertexLayer = s('g', { id: 'vertex-targets' }, Object.values(board.vertices).map(drawVertexTarget));
-  svg.replaceChildren(defs, seaLayer, harborLayer, hexLayer,
+  svg.replaceChildren(defs, seaLayer, beach, harborLayer, hexLayer,
     s('g', { id: 'roads', 'aria-hidden': 'true' }), s('g', { id: 'buildings', 'aria-hidden': 'true' }),
     drawRobber(), s('g', { id: 'ghost', 'aria-hidden': 'true' }), edgeLayer, vertexLayer);
   svg.onkeydown = arrowNav;
@@ -233,7 +256,7 @@ function drawHex(hx) {
   const corners = hexCorners(hx.q, hx.r);
   const inset = corners.map(c => ({ x: hx.x + (c.x - hx.x) * .93, y: hx.y + (c.y - hx.y) * .93 }));
   const hot = app.config.hotNumbers.includes(hx.token);
-  const g = s('g', { class: 'hex', id: `hex-${hx.id}`, role: 'button', 'data-x': cx, 'data-y': cy, 'data-hex': hx.id, tabindex: -1 },
+  const g = s('g', { class: 'hex', id: `hex-${hx.id}`, 'data-terrain': hx.terrain, role: 'button', 'data-x': cx, 'data-y': cy, 'data-hex': hx.id, tabindex: -1 },
     s('polygon', { class: 'hex-fill', points: poly(corners), fill: t.fill, filter: 'url(#inner)' }),
     s('polygon', { points: poly(corners), fill: 'url(#paper)', opacity: '.32', style: 'mix-blend-mode:multiply' }),
     s('polygon', { points: poly(inset), fill: 'none', stroke: 'url(#bevel)', 'stroke-width': 4 }),
@@ -270,7 +293,7 @@ function drawHarbor(hb) {
       ? (have[`icon-${hb.kind}`] ? s('image', { href: `images/icon-${hb.kind}.png`, x: bx - 8, y: by - 14, width: 16, height: 16 })
         : s('circle', { cx: bx, cy: by - 6, r: 5, fill: app.config.terrains[hb.kind].fill }))
       : s('text', { x: bx, y: by - 3, 'text-anchor': 'middle', 'font-size': 7, fill: '#868b93', 'letter-spacing': '.06em' }, 'ANY'),
-    s('text', { x: bx, y: by + (hb.kind === 'any' ? 7 : 9), 'text-anchor': 'middle', 'font-size': 9, 'font-weight': 600, fill: '#e8dcc4' }, label)
+    s('text', { class: 'harbor-rate', x: bx, y: by + (hb.kind === 'any' ? 7 : 9), 'text-anchor': 'middle', 'font-size': 9, 'font-weight': 600, fill: '#e8dcc4' }, label)
   );
 }
 
@@ -909,6 +932,9 @@ function floatChanges(p, cards, sign, { at = null } = {}) {
   }));
 }
 
+/** Collecting resources is the moment players watch most, so it runs slower than other effects (ms, before SPEED). */
+const PRODUCTION = { flight: 650, stagger: 260, glow: 1100 };
+
 /** Play one event. Resolves when its motion is done. */
 async function run(item) {
   const ev = item.event;
@@ -918,13 +944,13 @@ async function run(item) {
       return FX.rollDice([$('die0'), $('die1')], ev.dice, drawDie);
     case 'production': {
       const hexes = [...new Set(ev.payouts.map(po => po.hex))];
-      const glow = FX.glowHexes(hexes.map(id => document.querySelector(`#hex-${id} .hex-glow`)).filter(Boolean));
+      const glow = FX.glowHexes(hexes.map(id => document.querySelector(`#hex-${id} .hex-glow`)).filter(Boolean), PRODUCTION.glow);
       const flights = ev.payouts.map((po, i) => {
         const from = document.querySelector(`#hex-${po.hex} .token-disc`)?.getBoundingClientRect();
         const to = landingRect(po.player, po.resource);
         const land = () => { shift(po.player, po.amount, { hand: { [po.resource]: po.amount } }); return FX.floatText(to || from, `+${po.amount}`, colorOf(po.player), { icon: iconSrc(po.resource) }); };
-        if (!from || !to) return new Promise(r => setTimeout(r, FX.T(i * 90))).then(land);
-        return FX.flyCard(from, to, { icon: iconSrc(po.resource), color: colorOf(po.player), duration: 150 + (i % 5) * 25, delay: i * 90 }).then(land);
+        if (!from || !to) return new Promise(r => setTimeout(r, FX.T(PRODUCTION.stagger * i))).then(land);
+        return FX.flyCard(from, to, { icon: iconSrc(po.resource), color: colorOf(po.player), duration: PRODUCTION.flight + (i % 3) * 60, delay: PRODUCTION.stagger * i, arc: 60 }).then(land);
       });
       return Promise.all([glow, ...flights]);
     }
