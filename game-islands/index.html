@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Frontier Archipelago</title>
+  <meta name="description" content="A hex-based island trading game for 3 to 5 players, played hot-seat on one device.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="css/islands.css">
+</head>
+<body>
+  <a class="skip" href="#panel">Skip to the game panel</a>
+
+  <main class="app" id="app" hidden>
+    <section class="board-wrap" id="board-wrap" aria-label="Island board">
+      <div class="sea" aria-hidden="true"></div>
+      <svg id="board" role="group" aria-label="The island. Use Tab to reach places you can build, arrow keys to move between places."></svg>
+    </section>
+
+    <aside class="panel" id="panel" aria-label="Game panel" tabindex="-1">
+      <header class="panel-head">
+        <h1>The Frontier Archipelago</h1>
+        <p class="turn-info" id="turn-info"></p>
+      </header>
+      <section class="current" id="current" aria-live="polite"></section>
+      <section class="players" aria-label="Players"><ul id="players"></ul></section>
+      <section class="hand" id="hand" aria-label="Your hand">
+        <div class="tiles" id="tiles"></div>
+        <div class="cards" id="cards"></div>
+      </section>
+      <section class="dice-row" aria-label="Dice">
+        <div class="dice" id="dice" role="img" aria-label="Dice not rolled yet">
+          <div class="die" id="die0"></div>
+          <div class="die" id="die1"></div>
+        </div>
+        <div class="dice-total" id="dice-total"></div>
+      </section>
+      <section class="actions" id="actions" aria-label="Actions"></section>
+      <section class="log-wrap" aria-label="Game log">
+        <h2>Log</h2>
+        <ol class="log" id="log" aria-live="polite"></ol>
+      </section>
+    </aside>
+  </main>
+
+  <!-- Start screen -->
+  <section class="screen start" id="start" aria-labelledby="start-title" hidden>
+    <div class="start-card">
+      <p class="eyebrow">A frontier trading game</p>
+      <h1 id="start-title">The Frontier Archipelago</h1>
+      <p class="lede">Settle the islands, trade Timber, Clay, Fleece, Grain and Iron, and be first to 10 victory points. 3 to 5 players share this device.</p>
+      <form id="start-form">
+        <fieldset>
+          <legend>Players</legend>
+          <ol class="name-list" id="name-list"></ol>
+          <div class="row">
+            <button type="button" class="btn ghost" id="add-player">Add player</button>
+            <button type="button" class="btn ghost" id="remove-player">Remove player</button>
+          </div>
+        </fieldset>
+        <label class="field">
+          <span>Seed</span>
+          <input id="seed" name="seed" autocomplete="off" spellcheck="false">
+          <small>The same seed gives the same island and the same dice.</small>
+        </label>
+        <div class="row end">
+          <button type="button" class="btn ghost" id="resume" hidden>Resume saved game</button>
+          <button type="submit" class="btn primary">Start</button>
+        </div>
+      </form>
+      <p class="foot"><a href="?test">Run the tests</a></p>
+    </div>
+  </section>
+
+  <!-- Pass the device -->
+  <section class="screen pass" id="pass" role="dialog" aria-modal="true" aria-labelledby="pass-name" hidden>
+    <div class="pass-card">
+      <p class="eyebrow">Pass the device to</p>
+      <h2 class="pass-name" id="pass-name"></h2>
+      <p class="pass-reason" id="pass-reason"></p>
+      <p class="pass-last" id="pass-last"></p>
+      <button type="button" class="btn primary big" id="pass-ready">Ready</button>
+    </div>
+  </section>
+
+  <!-- Dialogs -->
+  <section class="screen modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" hidden>
+    <div class="modal-card">
+      <h2 id="modal-title"></h2>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="row end" id="modal-actions"></div>
+    </div>
+  </section>
+
+  <!-- Tests -->
+  <section class="screen tests" id="tests" aria-labelledby="tests-title" hidden>
+    <div class="tests-card">
+      <h1 id="tests-title">Tests</h1>
+      <p class="lede" id="tests-summary">Running…</p>
+      <ol class="test-list" id="test-list"></ol>
+      <p class="foot"><a href="index.html">Back to the game</a></p>
+    </div>
+  </section>
+
+  <div class="toast" id="toast" role="alert" hidden></div>
+
+  <script type="module" src="js/ui.js"></script>
+</body>
+</html>

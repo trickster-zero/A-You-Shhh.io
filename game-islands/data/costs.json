@@ -1,0 +1,6 @@
+{
+  "road":       { "timber": 1, "clay": 1 },
+  "settlement": { "timber": 1, "clay": 1, "fleece": 1, "grain": 1 },
+  "city":       { "grain": 2, "iron": 3 },
+  "card":       { "fleece": 1, "grain": 1, "iron": 1 }
+}

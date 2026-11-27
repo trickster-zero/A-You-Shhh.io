@@ -1,0 +1,46 @@
+{
+  "name": "The Frontier Archipelago",
+  "players": { "min": 3, "max": 5 },
+  "resources": ["timber", "clay", "fleece", "grain", "iron"],
+  "terrains": {
+    "timber":  { "label": "Timber",  "resource": "timber", "count": 4, "fill": "#5f7f5a" },
+    "clay":    { "label": "Clay",    "resource": "clay",   "count": 3, "fill": "#a3624a" },
+    "fleece":  { "label": "Fleece",  "resource": "fleece", "count": 4, "fill": "#a9b48f" },
+    "grain":   { "label": "Grain",   "resource": "grain",  "count": 4, "fill": "#c9a45c" },
+    "iron":    { "label": "Iron",    "resource": "iron",   "count": 3, "fill": "#6f7c8c" },
+    "barrens": { "label": "The Barrens", "resource": null, "count": 1, "fill": "#d2b88a" }
+  },
+  "boardRadius": 2,
+  "numberTokens": [2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12],
+  "hotNumbers": [6, 8],
+  "tokenShuffleAttempts": 500,
+  "harbors": {
+    "count": 9,
+    "generic": { "count": 4, "rate": 3 },
+    "specific": { "rate": 2, "resources": ["timber", "clay", "fleece", "grain", "iron"] },
+    "bankRate": 4
+  },
+  "pieces": { "road": 15, "settlement": 5, "city": 4 },
+  "victoryTarget": 10,
+  "discardLimit": 8,
+  "points": { "settlement": 1, "city": 2, "monument": 1 },
+  "awards": {
+    "longestRoad": { "label": "Longest Road", "points": 2, "minimum": 5 },
+    "harborMastery": { "label": "Harbor Mastery", "points": 2, "minimum": 3, "description": "Buildings on 3 different harbors. Passes to a player who holds strictly more." },
+    "largestFleet": { "label": "Largest Fleet", "points": 2, "minimum": 3, "description": "3 Privateers played. Passes to a player who has played strictly more." }
+  },
+  "cards": {
+    "privateer": { "label": "Privateer", "count": 14, "text": "Move the robber and take one card from a player beside it." },
+    "charter":   { "label": "Charter",   "count": 2,  "text": "Build 2 roads for free." },
+    "windfall":  { "label": "Windfall",  "count": 2,  "text": "Take any 2 resources from the bank." },
+    "embargo":   { "label": "Embargo",   "count": 2,  "text": "Name a resource. Every other player gives you all of it." },
+    "monument":  { "label": "Monument",  "count": 5,  "text": "Worth 1 victory point. Kept hidden until the game ends." }
+  },
+  "colors": [
+    { "name": "Sea-blue",   "hex": "#5b8db3", "letter": "B" },
+    { "name": "Moss",       "hex": "#7a9a5b", "letter": "M" },
+    { "name": "Dusty rose", "hex": "#c08a8e", "letter": "R" },
+    { "name": "Plum",       "hex": "#8e6f9e", "letter": "P" },
+    { "name": "Slate",      "hex": "#8a96a3", "letter": "S" }
+  ]
+}
