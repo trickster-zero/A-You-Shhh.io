@@ -923,7 +923,7 @@ async function run(item) {
         const from = document.querySelector(`#hex-${po.hex} .token-disc`)?.getBoundingClientRect();
         const to = landingRect(po.player, po.resource);
         const land = () => { shift(po.player, po.amount, { hand: { [po.resource]: po.amount } }); return FX.floatText(to || from, `+${po.amount}`, colorOf(po.player), { icon: iconSrc(po.resource) }); };
-        if (!from || !to) return new Promise(r => setTimeout(r, i * 90)).then(land);
+        if (!from || !to) return new Promise(r => setTimeout(r, FX.T(i * 90))).then(land);
         return FX.flyCard(from, to, { icon: iconSrc(po.resource), color: colorOf(po.player), duration: 150 + (i % 5) * 25, delay: i * 90 }).then(land);
       });
       return Promise.all([glow, ...flights]);
@@ -994,7 +994,7 @@ async function run(item) {
       const panel = $('panel');
       panel.style.setProperty('--turn-color', colorOf(ev.next));
       const phone = matchMedia('(max-width: 760px)').matches;
-      return panel.animate([{ transform: phone ? 'scaleX(0)' : 'scaleY(0)' }, { transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.2,.7,.2,1)', pseudoElement: '::before' }).finished.catch(() => {});
+      return panel.animate([{ transform: phone ? 'scaleX(0)' : 'scaleY(0)' }, { transform: 'none' }], { duration: FX.T(320), easing: 'cubic-bezier(.2,.7,.2,1)', pseudoElement: '::before' }).finished.catch(() => {});
     }
     case 'victory':
       return Promise.all([
